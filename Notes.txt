@@ -1,0 +1,4 @@
+- cd /mnt/c/users/m-mel/Documents/GitHub/MaxMelching.github.io/
+
+- Hack to enable/disable a design: in principle, all folders are in
+  .gitignore, but for activation we put them in folder itself
