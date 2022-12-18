@@ -1,1 +1,9 @@
 html5up*
+
+data/pictures*
+
+data/cv.*
+
+!data/cv.pdf
+
+data/BA_main.pdf
