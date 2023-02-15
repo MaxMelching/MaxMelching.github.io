@@ -2,8 +2,14 @@ html5up*
 
 data/pictures*
 
-data/cv.*
+data/cv*
 
-!data/cv.pdf
+!data/cv_german.pdf
+
+!data/cv_english.pdf
 
 data/BA_main.pdf
+
+data/moderncv*
+
+data/tweaklist*
