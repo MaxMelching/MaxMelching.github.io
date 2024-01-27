@@ -6,7 +6,11 @@ data/pictures*
 
 data/cv*
 
+!data/cv_german.tex
+
 !data/cv_german.pdf
+
+!data/cv_english.tex
 
 !data/cv_english.pdf
 
