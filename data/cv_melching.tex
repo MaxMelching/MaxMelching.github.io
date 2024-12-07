@@ -1,379 +1,309 @@
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Classicthesis-Styled CV
-% LaTeX Template
-% Version 1.0 (22/2/13)
-%
-% This template has been downloaded from:
-% http://www.LaTeXTemplates.com
-%
-% Original author:
-% Alessandro Plasmati
-%
-% License:
-% CC BY-NC-SA 3.0 (http://creativecommons.org/licenses/by-nc-sa/3.0/)
-%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% 
-% Modified in 2024 by Max Melching
-% 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\documentclass[fontsize=11pt, parskip=half]{customcv}
 
 
-%----------------------------------------------------------------------------------------
-%	PACKAGES AND OTHER DOCUMENT CONFIGURATIONS
-%----------------------------------------------------------------------------------------
+\definecolor{orange}{RGB}{247, 105, 0} % https://imagecolorpicker.com/color-code/f76900
 
-\documentclass[fontsize=11pt,parskip=half]{scrartcl}
-
-\usepackage{subfiles}
-
-\reversemarginpar % Move the margin to the left of the page 
-
-\newcommand{\MarginText}[1]{\marginpar{\raggedleft\itshape\small#1}} % New command defining the margin text style
-
-\usepackage[nochapters]{classicthesis} % Use the classicthesis style for the style of the document
-\usepackage[LabelsAligned]{currvita} % Use the currvita style for the layout of the document -> pass option NoDate to omit date; but I see why it makes sense, for things like present
+\definecolor{themecolor}{named}{orange}
 
 
 
-% \usepackage[right=1in]{geometry}  % Must be here to have effect, but effect it has is unexpected
-% \usepackage[scale=0.5]{geometry} % Reduce document margins
-\usepackage[left=2in,right=1.5in,top=1in,bottom=1in]{geometry} % Margins set by eye test
+\def\aei{Max Planck Institute for Gravitational Physics}
+\def\luh{Leibniz University Hannover}
+
+\def\dotsep{\ $\cdotp$\ \ } % Hmm ok this seems to create most equal spacing.
 
 
-\definecolor{uwmyellow}{RGB}{255, 189, 0} % https://imagecolorpicker.com/color-code/ffbd00
-\definecolor{caltechorange}{RGB}{239, 119, 35} % https://imagecolorpicker.com/color-code/ef7723
+\hidetodos  % When things are pushed
 
-% \definecolor{themecolor}{named}{Maroon} % Default of theme
-% \definecolor{themecolor}{named}{uwmyellow}
-\definecolor{themecolor}{named}{caltechorange}
-
-\renewcommand{\cvheadingfont}{\LARGE\color{themecolor}} % Font color of your name at the top
-
-\usepackage{hyperref} % Required for adding links	and customizing them
-\hypersetup{colorlinks, breaklinks, urlcolor=themecolor, linkcolor=themecolor} % Set link colors
-
-
-
-% \newlength{\datebox}\settowidth{\datebox}{Summer -- Winter} % Set the width of the date box in each block
-\newlength{\datebox}\settowidth{\datebox}{00/0000 -- 00/0000} % Set the width of the date box in each block
-
-%\newcommand{\NewEntry}[3]{\noindent\hangindent=2em\hangafter=0 \parbox{\datebox}{\small \textit{#1}}\hspace{1.5em} #2 #3 % Define a command for each new block - change spacing and font sizes here: #1 is the left margin, #2 is the italic date field and #3 is the position/employer/location field
-%\vspace{0.5em}} % Add some white space after each new entry
-\newcommand{\NewEntry}[3]{\noindent\hangindent=1em\hangafter=0 \parbox{\datebox}{\textit{#1}}\hspace{1.5em} #2 #3 % Define a command for each new block - change spacing and font sizes here: #1 is the left margin, #2 is the italic date field and #3 is the position/employer/location field
-% \vspace{0.5em}%
-} % Add some white space after each new entry
-
-
-% Still not sure if 1em or 2em indent here
-
-
-%\newcommand{\Description}[1]{\hangindent=2em\hangafter=0\noindent\raggedright\footnotesize{#1}\par\normalsize\vspace{1em}} % Define a command for descriptions of each entry - change spacing and font sizes here
-\newcommand{\Description}[1]{\hangindent=1.5em\hangafter=0\noindent\raggedright{#1}\par\normalsize\par} % Define a command for descriptions of each entry - change spacing and font sizes here
-
-
-\definecolor{headcolor}{rgb}{0.00,0.20,0.60}
-% für spruce: {0.00,0.40,0.20}, für seahorse: {0.00,0.20,0.60}
-
-% \newcommand{\head}[1]{\hangindent=1em\hangafter=0\noindent{\Large\color{Black}\textsc{#1}}\vspace{0.5em}} % or something like Maroon!50!orange
-% Here no \part after \noindent, strange effect for some reason
-
-
-
-% -- Fancy box for head, stolen from section of moderncvstyleclassic
-\newlength{\hintscolumnwidth}
-% \setlength{\hintscolumnwidth}{0.25\textwidth}
-\setlength{\hintscolumnwidth}{\datebox}
-\newlength{\baseletterheight}
-\settoheight{\baseletterheight}{{\Large\scshape o}}  % Choose font from head here
-\newlength{\separatorcolumnwidth}
-\setlength{\separatorcolumnwidth}{0.025\textwidth}
-\newlength{\maincolumnwidth}
-
-% \newcommand{\head}[1]{\par\hspace*{-\hintscolumnwidth}\parbox[t]{\hintscolumnwidth}{\strut\raggedleft\raisebox{\baseletterheight}{\color{themecolor}\rule{\hintscolumnwidth}{0.95ex}}} \hangindent=1em\hangafter=0\noindent{\Large\color{Black}\textsc{#1}}\vspace{0.5em}} % First working version, but not pretty
-% \newcommand{\head}[1]{\par\nobreak\hspace{-\hintscolumnwidth}\hspace{-\separatorcolumnwidth}\parbox[t]{\hintscolumnwidth}{\strut\raggedleft\raisebox{0.5\baseletterheight}{\color{themecolor}\rule{\hintscolumnwidth}{0.95ex}}}\nobreak\hspace{\separatorcolumnwidth}\nobreak\hangindent=1em\hangafter=0\noindent{\Large\color{Black}\textsc{#1}}\vspace{0.5em}} % Only works for some headings
-
-\newcommand{\head}[1]{\noindent\hspace{-\hintscolumnwidth}\hspace{-\separatorcolumnwidth}\hangindent=1em\hangafter=0\parbox[t]{\datebox}{\raisebox{0.25\baseletterheight}{\color{themecolor}\rule{\hintscolumnwidth\hspace{-1.5em}}{1ex}}}\hspace{\separatorcolumnwidth}{\Large\color{Black}\textsc{#1}}
-} % This seems to work. Looked at how NewEntry does things
-% -> maybe don't raise box at all? Also, I kind of think box height 0.5\baseletterheight instead of 1ex would make more sense, but this looks really good. So we just use this one
-% \newcommand{\head}[1]{\hspace{-\hintscolumnwidth}\hspace{-\separatorcolumnwidth}\parbox[t]{\datebox}{\raisebox{0.5\baseletterheight}{\color{themecolor}\rule{\hintscolumnwidth}{0.95ex}}}\hspace{1.5em}\hspace{\separatorcolumnwidth}\noindent\hangindent=1em\hangafter=0{\Large\color{Black}\textsc{#1}}\vspace{0.5em}} % Not working, but was just testing
-
-
-
-
-\usepackage{csquotes}
-
-
-\usepackage{xcolor}
-\newcommand{\todo}[1]{\fcolorbox{white}{red!42}{\textit{\textbf{TODO:}} #1}}
-
-%----------------------------------------------------------------------------------------
-
-
-% tailored to requirements from: https://gradoffice.caltech.edu/documents/29054/Supplemental_documents_rev180924.pdf
 
 
 \begin{document}
 
 \thispagestyle{empty} % Stop the page count at the bottom of the first page
 
-%----------------------------------------------------------------------------------------
-%	NAME AND CONTACT INFORMATION SECTION
-%----------------------------------------------------------------------------------------
-
 % \begin{cv}{\hangindent=1em\hangafter=0\noindent\par\nobreak\spacedallcaps{Max Melching}}\vspace{1.5em} % Your name -> par makes linebreak, but I kind of like that additional spacing
-\begin{cv}{\noindent\hangindent=0.6em\hangafter=0\textbf{\spacedallcaps{Max Melching}}}\vspace{1em} % Your name -> with no par. Now manual alignment with other text
+% \begin{cv}{\noindent\hangindent=0em\hangafter=0\textbf{\spacedallcaps{CV -- Max Melching}}} % Your name -> with no par. Now manual alignment with other text
+\begin{cv}{\spacedallcaps{CV -- Max Melching}} % Your name -> with no par. Now manual alignment with other text
 
 
-%\noindent\spacedlowsmallcaps{Personal Information}\vspace{0.5em} % Personal information heading
+%------------------------------------------------
+%	NAME AND CONTACT INFORMATION SECTION
+%------------------------------------------------
+
 \head{Personal Information}
 
-% \NewEntry{}{\textit{Born in Germany,}}{24 May 2000}%{05/24/2000}%{24.05.2000} % Birthplace and date
-\NewEntry{Birth Place}{Germany} % Birthplace and date
-\\
-\NewEntry{Email}{\href{mailto:maxm.melching@gmail.com}{maxm.melching@gmail.com}} % Email address
-\\
-\NewEntry{GitHub}{\href{https://github.com/MaxMelching}{MaxMelching}}
-\\
-\NewEntry{Website}{\href{https://maxmelching.github.io}{https://maxmelching.github.io}} % Personal website
+% % \Info{Born in Germany,}{24 May 2000}%{05/24/2000}%{24.05.2000}
+% \Info{Birth Place}{Germany}
+\Info{Email}{\href{mailto:maxm.melching@gmail.com}{maxm.melching@gmail.com}}
+\Info{Phone}{+49 (0) 1525 876 6522}
+\Info{GitHub}{\href{https://github.com/MaxMelching}{MaxMelching}}
+\Info{Website}{\href{https://maxmelching.github.io}{https://maxmelching.github.io}}
 
 
-\vspace{1em} % Extra white space between the personal information section and goal
 
-
-%----------------------------------------------------------------------------------------
+%------------------------------------------------
 %	EDUCATION
-%----------------------------------------------------------------------------------------
+%------------------------------------------------
 
 \head{Education}
 
+\NewEntry{M.Sc.~Physics}{2022 -- present}{\luh}
 
-\NewEntry{M.Sc.~Physics}{Leibniz University Hannover}
-
-% \Description{\MarginText{2022 -- present}\textbf{Final grade}:\newline
-\Description{\MarginText{2022 -- present}\textbf{Current, non-final grade:} 1,0\ \ $\cdotp$\ \ Equivalent GPA: 4.0\newline
-\textbf{Minor:} Mathematics%\newline
-%\textbf{Thesis:} Systematic Errors In Gravitational Waveform Models\newline
-%\textbf{Description:} \newline
-%\textbf{Supervisor:} Dr.~Frank Ohme%
-}
-
-%------------------------------------------------
-\vspace{0.5em}
-%------------------------------------------------
-
-\NewEntry{B.Sc.~Physics}{Leibniz University Hannover}
-
-\Description{\MarginText{2018 -- 2022}\textbf{Final grade:} 1,0 \ (summa cum laude)\ \ $\cdotp$\ \ Equivalent GPA: 4.0\newline
-\textbf{Minor:} Computer Science%\newline
-%\textbf{Thesis}: Systematic Differences in the Source Properties of the Third Gravitational-Wave Catalog\newline
-%\textbf{Description}: \newline
-%\textbf{Supervisor}: Dr.~Frank Ohme%
+\Description{%
+    \subsubhead{Current, non-final grade:} 1,0 \dotsep Equivalent GPA: 4.0%
+    
+    \subsubhead{Minor:} Mathematics
+    
+    % \subsubhead{Thesis:} Systematic Errors In Gravitational Waveform Models
+    
+    % \subsubhead{Description:}
+    
+    % \subsubhead{Supervisor:} Dr.~Frank Ohme%
 }
 
 %------------------------------------------------
 
-\vspace{1em} % Extra space between major sections
+\NewEntry{B.Sc.~Physics}{2018 -- 2022}{\luh}
+
+\Description{%
+    \subsubhead{Final grade:} 1,0 \ (summa cum laude) \dotsep Equivalent GPA: 4.0
+    
+    \subsubhead{Minor:} Computer Science
+    
+    % \subsubhead{Thesis}: Systematic Differences in the Source Properties of the Third Gravitational-Wave Catalog
+    
+    % \subsubhead{Description}: 
+    
+    % \subsubhead{Supervisor}: Dr.~Frank Ohme%
+}
 
 
-%----------------------------------------------------------------------------------------
+
+%------------------------------------------------
 %	WORK EXPERIENCE
-%----------------------------------------------------------------------------------------
+%------------------------------------------------
 
-%\noindent\spacedlowsmallcaps{Work Experience}\vspace{1em}
 \head{Work Experience}
 
 
-\NewEntry{Student Assistant}{\hspace*{-1em}Max Planck Institute for Gravitational Physics}
+% \NewEntry{Student Assistant}{10/2024 -- 03/2025}{\aei}
+\NewEntry{Student Assistant}{10/2024 -- present}{\aei}
 
 \Description{%
-\MarginText{10/2024 -- 03/2025}%
-Mainly web development and organizational tasks%\newline
-
-% \vspace*{0.25em} % Does not do anything
-
-\textbf{Reference:} Frank Ohme\ \ $\cdotp$\ \ \href{mailto:frank.ohme@aei.mpg.de}{frank.ohme@aei.mpg.de}%
-}
-
-%------------------------------------------------
-\vspace{0.5em}
-%------------------------------------------------
-
-% \NewEntry{Student Assistant}{Leibniz University Hannover}
-\NewEntry{Student Assistant}{Institute for Quantum Optics, Hannover}
-
-\Description{%
-\MarginText{04/2023 -- 07/2024}%
-Data analysis and software development the Cold Atom Lab experiment onboard the ISS. During the latter, I was tasked with the development of a \textsc{Python} package that can be used to read, process and evaluate experimental data. This package has then been applied by myself and colleagues to extract information from real measurement data.%\newline
-
-% \vspace*{0.25em} % Does not do anything
-
-\textbf{References:} Naceur Gaaloul\ \ $\cdotp$\ \ \href{mailto:gaaloul@iqo.uni-hannover.de}{gaaloul@iqo.uni-hannover.de}, Gabriel Müller\ \ $\cdotp$\ \ \href{mailto:g.mueller@iqo.uni-hannover.de}{g.mueller@iqo.uni-hannover.de}%
-}
-
-%------------------------------------------------
-\vspace{0.5em}
-%------------------------------------------------
-
-\NewEntry{Student Assistant}{Leibniz University Hannover}
-
-\Description{%
-\MarginText{10/2021 -- 02/2022}%
-Tutoring in \enquote{Mechanics and Heat}, a lecture on experimental physics for students in the first semester. This included grading of exercise sheets and the exam, as well as teaching a tutorial.%\newline
-
-% \vspace*{0.25em} % Does not do anything
-
-\textbf{Reference:} Tammo Block\ \ $\cdotp$\ \ \href{mailto:block@maphy.uni-hannover.de}{block@maphy.uni-hannover.de}%
+    Mainly web development and organizational tasks.
+    
+    \subsubhead{Reference:} Frank Ohme \dotsep \href{mailto:frank.ohme@aei.mpg.de}{frank.ohme@aei.mpg.de}%
 }
 
 %------------------------------------------------
 
-\vspace{1em} % Extra space between major sections
+\NewEntry{Student Assistant}{04/2023 -- 07/2024}{Institute for Quantum Optics, Hannover}
+
+\Description{%
+    % Data analysis and software development for the Cold Atom Lab experiment onboard the ISS. During the latter, I was tasked with the development of a \textsc{Python} package that can be used to read, process and evaluate experimental data. %This package has then been applied by myself and colleagues to extract information from real measurements.
+    Data analysis and software development for the Cold Atom Lab experiment onboard the ISS. Part of that was the development of a \textsc{Python} package that can be used to read, process and evaluate experimental data.
+    
+    \subsubhead{References:} Naceur Gaaloul \dotsep \href{mailto:gaaloul@iqo.uni-hannover.de}{gaaloul@iqo.uni-hannover.de}, Gabriel Müller \dotsep \href{mailto:g.mueller@iqo.uni-hannover.de}{g.mueller@iqo.uni-hannover.de}
+}
+
+%------------------------------------------------
+
+\NewEntry{Student Assistant}{10/2021 -- 02/2022}{\luh}
+
+\Description{%
+    Tutoring in \enquote{Mechanics and Heat}, a lecture on experimental physics for students in the first semester. This included grading of exercise sheets and the exam, as well as teaching a tutorial.
+    
+    \subsubhead{Reference:} Tammo Block \dotsep \href{mailto:block@maphy.uni-hannover.de}{block@maphy.uni-hannover.de}
+}
 
 
-%----------------------------------------------------------------------------------------
+
+%------------------------------------------------
 %	PUBLICATIONS & THESES
-%----------------------------------------------------------------------------------------
+%------------------------------------------------
 
-%\noindent\spacedlowsmallcaps{Work Experience}\vspace{1em}
 \head{Publications \& Theses}
 
-\NewEntry{Master Thesis}{\hspace*{-1em}Max Planck Institute for Gravitational Physics}%{Max Planck Institute for Gravitational Physics, Leibniz University Hannover}
+\iffalse
+
+% -- Hopefully, "in prep" can soon be replaced with "published", "submitted" or even "peer-reviewed"
+% \NewEntry{Paper (in prep)}{}{arxiv: \href{https://arxiv.org/}{...}}
+% \NewEntry{Paper (soon to be published)}{}{}%{arxiv: \href{https://arxiv.org/}{...}}
+% \NewEntry{Paper (in prep)}{early 2025}{arxiv: \href{https://arxiv.org/}{...}}
+\NewEntry{Paper (soon to be published)}{early 2025}{}%{arxiv: \href{https://arxiv.org/}{...}}
 
 \Description{%
-\MarginText{11/2023 -- 05/2025}%
-\textbf{Title:} Systematic Errors in Gravitational Waveform Models\newline
-\textbf{Description:} theoretical development and extension, as well as implementation, of tools in the Fisher matrix framework that is aimed at quantifying waveform systematics.
-
-% \vspace*{0.25em} % Does not do anything
-
-\textbf{Supervisors:} Frank Ohme\ \ $\cdotp$\ \ \href{mailto:frank.ohme@aei.mpg.de}{frank.ohme@aei.mpg.de}, Krishnendu NV\ \ $\cdotp$\ \ \href{mailto:krishnendu.nv@icts.res.in}{krishnendu.nv@icts.res.in}%
-}
-
-%------------------------------------------------
-\vspace{0.5em}
-%------------------------------------------------
-
-\NewEntry{Bachelor Thesis}{\hspace*{-1em}Max Planck Institute for Gravitational Physics}%{Max Planck Institute for Gravitational Physics, Leibniz University Hannover}
-
-\Description{%
-\MarginText{03/2022 -- 10/2022}%
-\textbf{Title:} Systematic Differences in the Source Properties of the Third Gravitational-Wave Catalog\newline
-\textbf{Description:} examination of waveform systematics in some of the detected gravitational wave events, focussing on the respective posterior distributions.% This included developing criteria to analyse differences and interpret results.
-
-% \vspace*{0.25em}
-
-\textbf{Supervisor:} Frank Ohme\ \ $\cdotp$\ \ \href{mailto:frank.ohme@aei.mpg.de}{frank.ohme@aei.mpg.de}%
+    % \subsubhead{Title:} Calibration
+    \subsubhead{Title:} Quantifying the known Unknown: Parameter estimation with statistical/systematic errors in waveform modelling of gravitational wave mergers
+    
+    \subsubhead{Description:} 
+    
+    % \subsubhead{Collaborators:}
+    \subsubhead{Author List:}
+    % Sumit Kumar \dotsep Frank Ohme \dotsep Max Melching
+    Sumit Kumar, Frank Ohme, Max Melching
 }
 
 %------------------------------------------------
 
-\vspace{1em} % Extra space between major sections
+% \NewEntry{Paper (in prep)}{}{arxiv: \href{https://arxiv.org/}{...}}
+\NewEntry{Paper (in prep)}{early 2025}{}%{arxiv: \href{https://arxiv.org/}{...}}
 
-%----------------------------------------------------------------------------------------
+\Description{%
+    \subsubhead{Title:} Generating Gravitational-Wave Signals with LALSimulation and gwsignal
+    
+    \subsubhead{Description:} 
+    
+    % \subsubhead{Collaborators:}
+    \subsubhead{Author List:} García-Quirós, Ohme et al.
+}
+
+
+\fi
+
+%------------------------------------------------
+
+% \NewEntry{Master Thesis}{11/2023 -- 05/2025}{\aei}%{\aei, \luh}
+\NewEntry{Master Thesis}{11/2023 -- present}{\aei}%{\aei, \luh}
+
+\Description{%
+    \subsubhead{Title:} Systematic Errors in Gravitational Waveform Models
+    
+    \subsubhead{Description:} Theoretical development and extension, as well as implementation, of tools in the Fisher matrix framework that aims at quantifying waveform systematics.
+    
+    \subsubhead{Supervisors:} Frank Ohme \dotsep \href{mailto:frank.ohme@aei.mpg.de}{frank.ohme@aei.mpg.de}, Krishnendu NV \dotsep \href{mailto:krishnendu.nv@icts.res.in}{krishnendu.nv@icts.res.in}
+}
+
+%------------------------------------------------
+
+\NewEntry{Bachelor Thesis}{03/2022 -- 10/2022}{{\aei}}%{\aei, \luh}
+
+\Description{%
+    \subsubhead{Title:} Systematic Differences in the Source Properties of the Third Gravitational-Wave Catalog
+    
+    \subsubhead{Description:} Examination of waveform systematics in some of the detected gravitational wave events, focussing on the respective posterior distributions.% This included developing criteria to analyse differences and interpret results.
+    
+    \todo{provide link?}
+    
+    \subsubhead{Supervisor:} Frank Ohme \dotsep \href{mailto:frank.ohme@aei.mpg.de}{frank.ohme@aei.mpg.de}
+}
+
+
+
+%------------------------------------------------
 %	Honours & Awards
-%----------------------------
+%------------------------------------------------
 
 \head{Honours \& Awards}
 
-% \Description{2023/2024\ \ $\cdotp$\ \ Deutschlandstipendium by Leibniz University Hannover}
-\Description{%
-\MarginText{2023/2024}%
-Deutschlandstipendium\ \ $\cdotp$\ \ Leibniz University Hannover\\
-(monthly stipend for two semesters)%
+% \Description{2023/2024 \dotsep Deutschlandstipendium by \luh}
+\Description[2023/2024]{%
+    Deutschlandstipendium \dotsep \luh\\
+    (monthly stipend for two semesters)
 }
 
-% \Description{2022/2023\ \ $\cdotp$\ \ Deutschlandstipendium by Leibniz University Hannover}
-\Description{%
-\MarginText{2022/2023}%
-Deutschlandstipendium\ \ $\cdotp$\ \ Leibniz University Hannover\\
-(monthly stipend for two semesters)%
+% \Description{2022/2023 \dotsep Deutschlandstipendium by \luh}
+\Description[2022/2023]{%
+    Deutschlandstipendium \dotsep \luh\\
+    (monthly stipend for two semesters)%
 }
 
-% \Description{2020\ \ $\cdotp$\ \ Niedersachsenstipendium by Leibniz University Hannover}
-\Description{%
-\MarginText{2020}%
-Niedersachsenstipendium\ \ $\cdotp$\ \ Leibniz University Hannover\\
-(one-time payment stipend)%
+% \Description{2020 \dotsep Niedersachsenstipendium by \luh}
+\Description[2020]{%
+    Niedersachsenstipendium \dotsep \luh\\
+    (one-time payment stipend)%
 }
 
-% \Description{2018\ \ $\cdotp$\ \ Winner of B!g B4ng Challenge by Leibniz University Hannover}
+% \Description{2018 \dotsep Winner of B!g B4ng Challenge by \luh}
 % %\Description{%
-% %\MarginText{Leibniz University Hannover}%
-% %2018\ \ $\cdotp$\ \ Winner of B!g B4ng Challenge}
+% %\MarginText{\luh}%
+% %2018 \dotsep Winner of B!g B4ng Challenge}
 
-% \Description{2016\ \ $\cdotp$\ \ Cambridge First Certificate in English (Level B2)}%{Oxford Test of English}
+% \Description{2016 \dotsep Cambridge First Certificate in English (Level B2)}%{Oxford Test of English}
 
-% \Description{2015\ \ $\cdotp$\ \ 2.~Landespreis in Bundeswettbewerb Fremdsprachen (Latin)}
+% \Description{2015 \dotsep 2.~Landespreis in Bundeswettbewerb Fremdsprachen (Latin)}
 
-%------------------------------------------------
 
-\vspace{1em} % Extra space between major sections
 
 %------------------------------------------------
-
-%----------------------------------------------------------------------------------------
 %	OTHER INFORMATION
-%----------------------------------------------------------------------------------------
-
-\head{Other Information}\vspace{1em}
-
-%----------------------------------------------------------------------------------------
-%	COMPUTER SKILLS
-%----------------------------------------------------------------------------------------
-
-{\hspace*{1em}\spacedlowsmallcaps{Computer Skills}}
-
-\Description{\textbf{Advanced:} \textsc{python}, Jupyter, \LaTeX, \texttt{git} (includes GitLab, GitHub)}
-
-\Description{\textbf{Intermediate:} Linux, Mathematica, \textsc{C}, Microsoft Windows}
-
-\Description{\textbf{Basic:} slurm, condor, \textsc{matlab}, Microsoft Office}
-
 %------------------------------------------------
 
-\vspace{1em} % Extra space between major sections
+\head{Other Information}
 
-%------------------------------------------------
 
-%----------------------------------------------------------------------------------------
-%	PRESENTATIONS
-%----------------------------------------------------------------------------------------
-
-{\hspace*{1em}\spacedlowsmallcaps{Presentations}}
+    \subhead{Computer Skills}
 
 \Description{%
-%\MarginText{Communication Skills}%
-% 2024\ $\cdotp$\ \ Poster at the LVK Meeting in Barcelona
-\MarginText{2024}%
-Poster at the LVK Meeting in Barcelona
-}
-
-%\vspace{-0.5em} % Negative vertical space to counteract the vertical space between every \Description command
-
-\Description{%
-%2024\ \ $\cdotp$\ \ Oral Presentation at the DPG meeting, section general relativity
-% 2024\ \ $\cdotp$\ \ Oral Presentation at the DPG Spring Meeting of the German physical society, section Gravitation and Relativity
-\MarginText{2024}%
-Oral Presentation at the DPG Spring Meeting of the German physical society, section Gravitation and Relativity
-}
-
-%------------------------------------------------
-
-%----------------------------------------------------------------------------------------
-%	PERSONAL
-%----------------------------------------------------------------------------------------
-
-{\hspace*{1em}\spacedlowsmallcaps{Personal}}
-
-\Description{%
-\textbf{Languages:} German (Mothertongue)\ \ $\cdotp$\ \  English (Advanced)
+    \subsubhead{Advanced:} \textsc{python}, Jupyter, \LaTeX, \texttt{git} (includes GitLab, GitHub)
+    
+    \subsubhead{Intermediate:} Linux, Mathematica, \textsc{C}, Microsoft Windows
+    
+    \subsubhead{Basic:} \texttt{slurm}, \texttt{condor}, \textsc{matlab}, Microsoft Office
 }
 
 
-\Description{\textbf{Interests:} Photography\ \ $\cdotp$\ \ Fitness \& Running\ \ $\cdotp$\ \ Outdoor Games}
+%     \subhead{Code Contributions \todo{include or remove?}}
 
-%----------------------------------------------------------------------------------------
+% \Description{%
+%     % \href{https://git.ligo.org/lscsoft/lalsuite}{\texttt{lalsimulation}} \dotsep \href{https://gitlab.com/gwpy/gwpy}{\texttt{gwpy}} \dotsep \href{https://github.com/MaxMelching/gw_frames}{\texttt{GWFrames}} \dotsep \texttt{cal\_data\_analysis} (not public) \dotsep \texttt{gw-signal-tools} (not public)
+%     % 
+%     \subsubhead{Authored:} \texttt{cal\_data\_analysis} (not public) \dotsep \texttt{gw-signal-tools} (not public) \dotsep \href{https://github.com/MaxMelching/gw_frames}{\texttt{GWFrames}}
+    
+%     \subsubhead{Contributed:} \href{https://git.ligo.org/lscsoft/lalsuite}{\texttt{lalsimulation}} \dotsep \href{https://gitlab.com/gwpy/gwpy}{\texttt{gwpy}}
+% }
+
+
+    \subhead{Presentations}
+
+\Description[09/2024]{%
+    % 2024 \dotsep Poster at the LVK Meeting in Barcelona
+    % 
+    % Poster at the LVK Meeting in Barcelona (LIGO DCC: \href{https://dcc.ligo.org/G2401544}{G2401544})
+    % 
+    Poster \enquote{Using Correlations For Good -- Systematic Errors Using Alignment} at the LIGO-Virgo-KAGRA Meeting in Barcelona (LIGO DCC: \href{https://dcc.ligo.org/G2401544}{G2401544})
+}
+
+
+\Description[03/2024]{%
+    %2024 \dotsep Oral Presentation at the DPG meeting, section general relativity
+    % 
+    % 2024 \dotsep Oral Presentation at the DPG Spring Meeting of the German physical society, section Gravitation and Relativity
+    % 
+    % Oral Presentation at the DPG Spring Meeting of the German physical society, section Gravitation and Relativity
+    Oral Presentation \enquote{Systematic Differencves In The Source Properties Of Gravitational Wave Signals} at the DPG Spring Meeting of the German physical society, section Gravitation and Relativity
+}
+
+
+    \subhead{Personal}
+
+\Description{%
+    % \subsubhead{Languages:} \textsc{German} \dotsep Mothertongue, \textsc{English} \dotsep Advanced (fluent and accurate communication)
+    % \subsubhead{Languages:} German (Mothertongue) \dotsep English (Advanced, fluent and accurate communication)
+    % \subsubhead{Languages:} German (Mothertongue) \dotsep  English (Advanced)
+    % 
+    \subsubhead{Languages:} German (Native) \dotsep English (Full Working Proficiency)
+}
+
+% \newlength{\langbox} % Create a new length for the length of languages to keep them equally spaced
+% \settowidth{\langbox}{English} % Length equals the length of "English" - if you have a longer language in your list put it here
+
+% \Description{\MarginText{Languages}\parbox{\langbox}{\textsc{German}} \dotsep Mothertongue}
+
+
+% %\Description{\parbox{\langbox}{\textsc{English}} \dotsep Intermediate (conversationally fluent)}
+% \Description{\parbox{\langbox}{\textsc{English}} \dotsep Advanced (fluent and accurate communication)}
+
+
+% \Description{\subsubhead{Interests:} Photography \dotsep Fitness \& Running \dotsep Outdoor Games/Sports \dotsep Watching Sports}
+
+
+%     \subhead{Memberships}
+
+% \Description{%
+%     German Physical Society (DPG)
+% }
+\todo{mention memberships?}
 
 
 \end{cv}
