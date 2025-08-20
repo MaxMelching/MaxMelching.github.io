@@ -119,14 +119,22 @@
 \setlength{\subheadindent}{0pt}
 
 
+% -- Custom filling. Credits: https://tex.stackexchange.com/a/392742
+\newcommand\entryfilling{%
+    \hfill
+    % \dotfill
+    % \leavevmode\cleaders\hb@xt@.44em{\hss$\cdotp$\hss}\hfill\kern\z@
+    % \leavevmode\cleaders\hb@xt@.44em{\hss$\color{themecolor}\cdotp$\hss}\hfill\kern\z@
+}
+
 \newcommand{\NewEntry}[3]{%
     \par%
     \noindent\hangindent=\entryindent\hangafter=0%
-    % \textit{#1}\hfill#3%
-    % \MarginText{#2}\textit{#1}\hfill#3%
-    % \MarginText{#2}\raggedright\textit{#1}\hfill#3%
-    % \MarginText{#2}\raggedleft\textit{#1}\hfill#3%
-    \ifthenelse{\isempty{#3}}{\MarginText{#2}\raggedright\textit{#1}}{\MarginText{#2}\raggedleft\textit{#1}\hfill#3}% Only this works. I do not understand why, but I also don't really care -> maybe related to margin definition by either classicthesis or currvita, so perhaps some weird interplay coming from that
+    % \textit{#1}~\entryfilling~#3%
+    % \MarginText{#2}\textit{#1}~\entryfilling~#3%
+    % \MarginText{#2}\raggedright\textit{#1}~\entryfilling~#3%
+    % \MarginText{#2}\raggedleft\textit{#1}~\entryfilling~#3%
+    \ifthenelse{\isempty{#3}}{\MarginText{#2}\raggedright\textit{#1}}{\MarginText{#2}\raggedleft\textit{#1}~\entryfilling~#3}% Only this works. I do not understand why, but I also don't really care -> maybe related to margin definition by either classicthesis or currvita, so perhaps some weird interplay coming from that
     \par%
 } % Define a command for each new block - change spacing and font sizes here: #1 is the date in left margin, #2 is the italic description field and #3 is the position/employer/location field
 
@@ -218,13 +226,23 @@
 
 
 
+% -- Custom filling. Credits: https://tex.stackexchange.com/a/392742
+\newcommand\subheadfilling{%
+    % \hfill
+    % \dotfill
+    \leavevmode\cleaders\hb@xt@.44em{\hss$\cdotp$\hss}\hfill\kern\z@
+    % \leavevmode\cleaders\hb@xt@.44em{\hss$\color{themecolor}\cdotp$\hss}\hfill\kern\z@
+}
+
 \newcommand{\subhead}[1]{
     \par% Make sure new paragraph is started
     % \vspace{0.5\parskip}% Additional spacing between different headings
     \noindent\hangindent=\subheadindent\hangafter=0%
     {%
     % \spacedlowsmallcaps{#1}
-    \slshape\spacedlowsmallcaps{#1}
+    % \slshape\spacedlowsmallcaps{#1}%
+    % \slshape\spacedlowsmallcaps{\underline{#1}}%
+    \slshape\spacedlowsmallcaps{#1}~\subheadfilling%
     % \color{themecolor}\spacedlowsmallcaps{#1}%
     % \contour{black}{\textcolor{themecolor}{\spacedlowsmallcaps{#1}}}%
     }%
