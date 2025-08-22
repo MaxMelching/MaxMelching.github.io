@@ -13,12 +13,14 @@
 \ProvidesClass{customcv}[2024/11/17 v1.0 A custom CV class.]
 
 % -- Set the default theme color
-\newcommand{\customcv@themecolor}{black}
+\newcommand{\customcv@ThemeColor}{black}
+\newcommand{\customcv@AccentColor}{black}
 
 % NOTE: using classicthesis here already throws error, for some reason
 
 \RequirePackage{xkeyval}
-\DeclareOptionX{themecolor}[black]{\renewcommand{\customcv@themecolor}{#1}}
+\DeclareOptionX{themecolor}[black]{\renewcommand{\customcv@ThemeColor}{#1}}
+\DeclareOptionX{accentcolor}[black]{\renewcommand{\customcv@AccentColor}{#1}}
 \ProcessOptionsX
 
 \DeclareOption*{\PassOptionsToClass{\CurrentOption}{scrartcl}}
@@ -33,7 +35,8 @@
 \AtEndOfClass{
   \RequirePackage[nochapters]{classicthesis}
   \RequirePackage{xcolor}
-  \definecolor{themecolor}{named}{\customcv@themecolor}
+  \definecolor{ThemeColor}{named}{\customcv@ThemeColor}
+  \definecolor{AccentColor}{named}{\customcv@AccentColor}
 }
 
 
@@ -94,10 +97,11 @@
 % \RequirePackage[left=2.1in,right=1.25in,top=1in,bottom=1in]{geometry} % Margins set by eye test
 % -- HAS TO BE DONE BELOW!
 
-\renewcommand{\cvheadingfont}{\LARGE\bfseries\color{themecolor}} % Font color of your name at the top
+\renewcommand{\cvheadingfont}{\LARGE\bfseries\color{ThemeColor}} % Font color of your name at the top
 
 \RequirePackage{hyperref} % Required for adding links and customizing them
-\hypersetup{colorlinks, breaklinks, urlcolor=themecolor, linkcolor=themecolor} % Set link colors
+\hypersetup{colorlinks, breaklinks, urlcolor=ThemeColor, linkcolor=ThemeColor} % Set link colors
+% \hypersetup{colorlinks, breaklinks, urlcolor=AccentColor, linkcolor=AccentColor} % Set link colors
 
 
 
@@ -124,7 +128,8 @@
     \hfill
     % \dotfill
     % \leavevmode\cleaders\hb@xt@.44em{\hss$\cdotp$\hss}\hfill\kern\z@
-    % \leavevmode\cleaders\hb@xt@.44em{\hss$\color{themecolor}\cdotp$\hss}\hfill\kern\z@
+    % \leavevmode\cleaders\hb@xt@.44em{\hss$\color{ThemeColor}\cdotp$\hss}\hfill\kern\z@
+    % \leavevmode\cleaders\hb@xt@.44em{\hss$-$\hss}\hfill\kern\z@
 }
 
 \newcommand{\NewEntry}[3]{%
@@ -198,17 +203,17 @@
     \vspace*{1em}% Spacing between different headings
     \noindent\hangindent=\headindent\hangafter=0%
     \hspace{-\headboxwidth}\hspace{-\separatorcolumnwidth}% Spacing adjustments
-    \parbox[t]{\datebox}{\raisebox{0.25\baseletterheight}{\color{themecolor}\rule{\headboxwidth}{\headboxheight}}}% Colored ruler on left side
+    \parbox[t]{\datebox}{\raisebox{0.25\baseletterheight}{\color{ThemeColor}\rule{\headboxwidth}{\headboxheight}}}% Colored ruler on left side
     \hspace{\separatorcolumnwidth}%
     {\Large\scshape\bfseries% Unfortunately, pagella has no fat + smallcaps
-     \color{themecolor}%
-     % \color{themecolor!92!black}%
+     \color{ThemeColor}%
+     % \color{ThemeColor!92!black}%
      #1
     }% Actual text
     \par%
 } % This seems to work. Looked at how NewEntry does things
 % -> maybe don't raise box at all? Also, I kind of think box height 0.5\baseletterheight instead of 1ex would make more sense, but this looks really good. So we just use this one
-% \newcommand{\head}[1]{\hspace{-\headboxwidth}\hspace{-\separatorcolumnwidth}\parbox[t]{\datebox}{\raisebox{0.5\baseletterheight}{\color{themecolor}\rule{\headboxwidth}{0.95ex}}}\hspace{1.5em}\hspace{\separatorcolumnwidth}\noindent\hangindent=1em\hangafter=0{\Large\color{Black}\textsc{#1}}\vspace{0.5em}} % Not working, but was just testing
+% \newcommand{\head}[1]{\hspace{-\headboxwidth}\hspace{-\separatorcolumnwidth}\parbox[t]{\datebox}{\raisebox{0.5\baseletterheight}{\color{ThemeColor}\rule{\headboxwidth}{0.95ex}}}\hspace{1.5em}\hspace{\separatorcolumnwidth}\noindent\hangindent=1em\hangafter=0{\Large\color{Black}\textsc{#1}}\vspace{0.5em}} % Not working, but was just testing
 
 
 % -- Now adjust leftmargin, taking bpx into account
@@ -231,7 +236,7 @@
     % \hfill
     % \dotfill
     \leavevmode\cleaders\hb@xt@.44em{\hss$\cdotp$\hss}\hfill\kern\z@
-    % \leavevmode\cleaders\hb@xt@.44em{\hss$\color{themecolor}\cdotp$\hss}\hfill\kern\z@
+    % \leavevmode\cleaders\hb@xt@.44em{\hss$\color{ThemeColor}\cdotp$\hss}\hfill\kern\z@
 }
 
 \newcommand{\subhead}[1]{
@@ -243,8 +248,8 @@
     % \slshape\spacedlowsmallcaps{#1}%
     % \slshape\spacedlowsmallcaps{\underline{#1}}%
     \slshape\spacedlowsmallcaps{#1}~\subheadfilling%
-    % \color{themecolor}\spacedlowsmallcaps{#1}%
-    % \contour{black}{\textcolor{themecolor}{\spacedlowsmallcaps{#1}}}%
+    % \color{ThemeColor}\spacedlowsmallcaps{#1}%
+    % \contour{black}{\textcolor{ThemeColor}{\spacedlowsmallcaps{#1}}}%
     }%
     % \vspace*{-0.33\parskip}% Does not make things better
     \par%
@@ -259,12 +264,27 @@
 
 
 
+% -- Some additional packages and commands for text body
 \RequirePackage{csquotes}
-
-
 \RequirePackage{xcolor}
+
+
 \def\showtodos{true}
 \newcommand{\hidetodos}[0]{\def\showtodos{false}}
 \newcommand{\todo}[1]{\ifthenelse{\equal{\showtodos}{true}}{\fcolorbox{white}{red!42}{\textit{\textbf{TODO:}} #1}}{}}
+
+
+\def\customsep{\ $\cdotp$\ \ } % This seems to create most equal spacing.
+% \def\customsep{\ $\color{ThemeColor}\cdotp$\ \ }
+
+
+\IfFileExists{fourier-orns.sty}{
+  \RequirePackage{fourier-orns}
+%   \def\customsep{\ \raisebox{-2pt}{\LARGE\starredbullet}\ \ }
+%   \def\customsep{\ \raisebox{-2pt}{\color{ThemeColor}\LARGE\starredbullet}\ \ }
+  \def\customsep{\ \raisebox{-2pt}{\color{AccentColor}\LARGE\starredbullet}\ \ }
+}{}
+
+% TODO: rename to customsep
 
 %----------------------------------------------------------------------------------------

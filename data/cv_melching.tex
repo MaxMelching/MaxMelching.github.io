@@ -1,17 +1,22 @@
-\documentclass[fontsize=11pt, parskip=half]{customcv}
+\documentclass[
+    fontsize=11pt,
+    parskip=half,
+    % themecolor=orange,
+]{customcv}
 
 
-\definecolor{orange}{RGB}{247, 105, 0} % https://imagecolorpicker.com/color-code/f76900
+% -- Colors
+\definecolor{CaltechOrange}{HTML}{FF6C0C}
+\definecolor{CaltechDarkGreen}{HTML}{005851}
 
-\definecolor{themecolor}{named}{orange}
+\colorlet{ThemeColor}{CaltechOrange}
+\colorlet{AccentColor}{CaltechDarkGreen!90!white}
 
 
-
+% -- Abbreviations
 \def\aei{Max Planck Institute for Gravitational Physics}
 \def\luh{Leibniz University Hannover}
 \def\caltech{California Institute of Technology}
-
-\def\dotsep{\ $\cdotp$\ \ } % Hmm ok this seems to create most equal spacing.
 
 
 \hidetodos  % When things are pushed
@@ -26,6 +31,8 @@
 % \begin{cv}{\noindent\hangindent=0em\hangafter=0\textbf{\spacedallcaps{CV -- Max Melching}}} % Your name -> with no par. Now manual alignment with other text
 \begin{cv}{\spacedallcaps{CV -- Max Melching}} % Your name -> with no par. Now manual alignment with other text
 
+
+% \color{CaltechDarkGrey}
 
 %------------------------------------------------
 %	NAME AND CONTACT INFORMATION SECTION
@@ -56,7 +63,7 @@
 \NewEntry{M.Sc.~(Physics)}{10/2022 -- 05/2025}{\luh}
 
 \Description{%
-    \subsubhead{Final grade:} 1,0 \ (with honors) \dotsep Equivalent GPA: 4.0%
+    \subsubhead{Final grade:} 1,0 \ (with honors) \customsep Equivalent GPA: 4.0%
     
     \subsubhead{Minor:} Mathematics
 }
@@ -66,7 +73,7 @@
 \NewEntry{B.Sc.~(Physics)}{10/2018 -- 10/2022}{\luh}
 
 \Description{%
-    \subsubhead{Final grade:} 1,0 \ (with honors) \dotsep Equivalent GPA: 4.0
+    \subsubhead{Final grade:} 1,0 \ (with honors) \customsep Equivalent GPA: 4.0
     
     \subsubhead{Minor:} Computer Science
 }
@@ -85,7 +92,7 @@
 \Description{%
     Various tasks related to the Max Planck Leadnet, such as website development and maintenance, and organizational duties.
     
-    \subsubhead{Reference:} Frank Ohme \dotsep \href{mailto:frank.ohme@aei.mpg.de}{frank.ohme@aei.mpg.de}%
+    \subsubhead{Reference:} Frank Ohme \customsep \href{mailto:frank.ohme@aei.mpg.de}{frank.ohme@aei.mpg.de}%
 }
 
 %------------------------------------------------
@@ -96,7 +103,7 @@
     % Data analysis and software development for the Cold Atom Lab experiment onboard the ISS. During the latter, I was tasked with the development of a \textsc{Python} package that can be used to read, process and evaluate experimental data. %This package has then been applied by myself and colleagues to extract information from real measurements.
     Data analysis and software development for the Cold Atom Lab experiment onboard the ISS. Part of that was the development of a \textsc{Python} package that can be used to read, process and evaluate experimental data.
     
-    \subsubhead{References:} Naceur Gaaloul \dotsep \href{mailto:gaaloul@iqo.uni-hannover.de}{gaaloul@iqo.uni-hannover.de}, Gabriel Müller \dotsep \href{mailto:g.mueller@iqo.uni-hannover.de}{g.mueller@iqo.uni-hannover.de}
+    \subsubhead{References:} Naceur Gaaloul \customsep \href{mailto:gaaloul@iqo.uni-hannover.de}{gaaloul@iqo.uni-hannover.de}, Gabriel Müller \customsep \href{mailto:g.mueller@iqo.uni-hannover.de}{g.mueller@iqo.uni-hannover.de}
 }
 
 %------------------------------------------------
@@ -106,7 +113,7 @@
 \Description{%
     I was one of the tutors for an introductory physics lecture for first-semester undergraduate students. Responsibilities included grading exercise sheets and exams, as well as teaching tutorials to part of the class.
     
-    \subsubhead{Reference:} Tammo Block \dotsep \href{mailto:block@maphy.uni-hannover.de}{block@maphy.uni-hannover.de}
+    \subsubhead{Reference:} Tammo Block \customsep \href{mailto:block@maphy.uni-hannover.de}{block@maphy.uni-hannover.de}
 }
 
 
@@ -133,7 +140,7 @@
     
     % \subsubhead{Collaborators:}
     \subsubhead{Author List:}
-    % Sumit Kumar \dotsep Frank Ohme \dotsep Max Melching
+    % Sumit Kumar \customsep Frank Ohme \customsep Max Melching
     Sumit Kumar, Frank Ohme, Max Melching
 }
 
@@ -163,7 +170,7 @@
     
     \subsubhead{Description:} Theoretical development and extension, as well as implementation, of tools in the Fisher matrix framework that aims at quantifying waveform systematics.
     
-    \subsubhead{Supervisors:} Frank Ohme \dotsep \href{mailto:frank.ohme@aei.mpg.de}{frank.ohme@aei.mpg.de}, Krishnendu NV \dotsep \href{mailto:krishnendu.nv@icts.res.in}{krishnendu.nv@icts.res.in}
+    \subsubhead{Supervisors:} Frank Ohme \customsep \href{mailto:frank.ohme@aei.mpg.de}{frank.ohme@aei.mpg.de}, Krishnendu NV \customsep \href{mailto:krishnendu.nv@icts.res.in}{krishnendu.nv@icts.res.in}
 
     \subsubhead{DOI:} \href{https://doi.org/10.15488/19415}{10.15488/19415}
 }
@@ -179,7 +186,7 @@
     
     \todo{provide link?}
     
-    \subsubhead{Supervisor:} Frank Ohme \dotsep \href{mailto:frank.ohme@aei.mpg.de}{frank.ohme@aei.mpg.de}
+    \subsubhead{Supervisor:} Frank Ohme \customsep \href{mailto:frank.ohme@aei.mpg.de}{frank.ohme@aei.mpg.de}
 
     \subsubhead{DOI:} \href{https://doi.org/10.15488/19414}{10.15488/19414}
 }
@@ -192,32 +199,32 @@
 
 \head{Honors \& Awards}
 
-% \Description{2023/2024 \dotsep Deutschlandstipendium by \luh}
+% \Description{2023/2024 \customsep Deutschlandstipendium by \luh}
 \Description[2023/2024]{%
-    Deutschlandstipendium \dotsep \luh\\
+    Deutschlandstipendium \customsep \luh\\
     (monthly stipend for two semesters)
 }
 
-% \Description{2022/2023 \dotsep Deutschlandstipendium by \luh}
+% \Description{2022/2023 \customsep Deutschlandstipendium by \luh}
 \Description[2022/2023]{%
-    Deutschlandstipendium \dotsep \luh\\
+    Deutschlandstipendium \customsep \luh\\
     (monthly stipend for two semesters)%
 }
 
-% \Description{2020 \dotsep Niedersachsenstipendium by \luh}
+% \Description{2020 \customsep Niedersachsenstipendium by \luh}
 \Description[2020]{%
-    Niedersachsenstipendium \dotsep \luh\\
+    Niedersachsenstipendium \customsep \luh\\
     (one-time payment stipend)%
 }
 
-% \Description{2018 \dotsep Winner of B!g B4ng Challenge by \luh}
+% \Description{2018 \customsep Winner of B!g B4ng Challenge by \luh}
 % %\Description{%
 % %\MarginText{\luh}%
-% %2018 \dotsep Winner of B!g B4ng Challenge}
+% %2018 \customsep Winner of B!g B4ng Challenge}
 
-% \Description{2016 \dotsep Cambridge First Certificate in English (Level B2)}%{Oxford Test of English}
+% \Description{2016 \customsep Cambridge First Certificate in English (Level B2)}%{Oxford Test of English}
 
-% \Description{2015 \dotsep 2.~Landespreis in Bundeswettbewerb Fremdsprachen (Latin)}
+% \Description{2015 \customsep 2.~Landespreis in Bundeswettbewerb Fremdsprachen (Latin)}
 
 
 
@@ -242,18 +249,18 @@
 %     \subhead{Code Contributions \todo{include or remove?}}
 
 % \Description{%
-%     % \href{https://git.ligo.org/lscsoft/lalsuite}{\texttt{lalsimulation}} \dotsep \href{https://gitlab.com/gwpy/gwpy}{\texttt{gwpy}} \dotsep \href{https://github.com/MaxMelching/gw_frames}{\texttt{GWFrames}} \dotsep \texttt{cal\_data\_analysis} (not public) \dotsep \texttt{gw-signal-tools} (not public)
+%     % \href{https://git.ligo.org/lscsoft/lalsuite}{\texttt{lalsimulation}} \customsep \href{https://gitlab.com/gwpy/gwpy}{\texttt{gwpy}} \customsep \href{https://github.com/MaxMelching/gw_frames}{\texttt{GWFrames}} \customsep \texttt{cal\_data\_analysis} (not public) \customsep \texttt{gw-signal-tools} (not public)
 %     % 
-%     \subsubhead{Authored:} \texttt{cal\_data\_analysis} (not public) \dotsep \texttt{gw-signal-tools} (not public) \dotsep \href{https://github.com/MaxMelching/gw_frames}{\texttt{GWFrames}}
+%     \subsubhead{Authored:} \texttt{cal\_data\_analysis} (not public) \customsep \texttt{gw-signal-tools} (not public) \customsep \href{https://github.com/MaxMelching/gw_frames}{\texttt{GWFrames}}
     
-%     \subsubhead{Contributed:} \href{https://git.ligo.org/lscsoft/lalsuite}{\texttt{lalsimulation}} \dotsep \href{https://gitlab.com/gwpy/gwpy}{\texttt{gwpy}}
+%     \subsubhead{Contributed:} \href{https://git.ligo.org/lscsoft/lalsuite}{\texttt{lalsimulation}} \customsep \href{https://gitlab.com/gwpy/gwpy}{\texttt{gwpy}}
 % }
 
 
     \subhead{Presentations}
 
 \Description[09/2024]{%
-    % 2024 \dotsep Poster at the LVK Meeting in Barcelona
+    % 2024 \customsep Poster at the LVK Meeting in Barcelona
     % 
     % Poster at the LVK Meeting in Barcelona (LIGO DCC: \href{https://dcc.ligo.org/G2401544}{G2401544})
     % 
@@ -262,9 +269,9 @@
 
 
 \Description[03/2024]{%
-    %2024 \dotsep Oral Presentation at the DPG meeting, section general relativity
+    %2024 \customsep Oral Presentation at the DPG meeting, section general relativity
     % 
-    % 2024 \dotsep Oral Presentation at the DPG Spring Meeting of the German physical society, section Gravitation and Relativity
+    % 2024 \customsep Oral Presentation at the DPG Spring Meeting of the German physical society, section Gravitation and Relativity
     % 
     % Oral Presentation at the DPG Spring Meeting of the German physical society, section Gravitation and Relativity
     Oral Presentation \enquote{Systematic Differences in the Source Properties Of Gravitational Wave Signals} at the DPG Spring Meeting of the German physical society, section Gravitation and Relativity
@@ -279,24 +286,24 @@
     \subhead{Personal}
 
 \Description{%
-    % \subsubhead{Languages:} \textsc{German} \dotsep Mothertongue, \textsc{English} \dotsep Advanced (fluent and accurate communication)
-    % \subsubhead{Languages:} German (Mothertongue) \dotsep English (Advanced, fluent and accurate communication)
-    % \subsubhead{Languages:} German (Mothertongue) \dotsep  English (Advanced)
+    % \subsubhead{Languages:} \textsc{German} \customsep Mothertongue, \textsc{English} \customsep Advanced (fluent and accurate communication)
+    % \subsubhead{Languages:} German (Mothertongue) \customsep English (Advanced, fluent and accurate communication)
+    % \subsubhead{Languages:} German (Mothertongue) \customsep  English (Advanced)
     % 
-    \subsubhead{Languages:} German (Native) \dotsep English (Full Working Proficiency)
+    \subsubhead{Languages:} German (Native) \customsep English (Full Working Proficiency)
 }
 
 % \newlength{\langbox} % Create a new length for the length of languages to keep them equally spaced
 % \settowidth{\langbox}{English} % Length equals the length of "English" - if you have a longer language in your list put it here
 
-% \Description{\MarginText{Languages}\parbox{\langbox}{\textsc{German}} \dotsep Mothertongue}
+% \Description{\MarginText{Languages}\parbox{\langbox}{\textsc{German}} \customsep Mothertongue}
 
 
-% %\Description{\parbox{\langbox}{\textsc{English}} \dotsep Intermediate (conversationally fluent)}
-% \Description{\parbox{\langbox}{\textsc{English}} \dotsep Advanced (fluent and accurate communication)}
+% %\Description{\parbox{\langbox}{\textsc{English}} \customsep Intermediate (conversationally fluent)}
+% \Description{\parbox{\langbox}{\textsc{English}} \customsep Advanced (fluent and accurate communication)}
 
 
-% \Description{\subsubhead{Interests:} Photography \dotsep Fitness \& Running \dotsep Outdoor Games/Sports \dotsep Watching Sports}
+% \Description{\subsubhead{Interests:} Photography \customsep Fitness \& Running \customsep Outdoor Games/Sports \customsep Watching Sports}
 
 
 %     \subhead{Memberships}
