@@ -1,0 +1,188 @@
+<!DOCTYPE HTML>
+<!--
+	Spectral by HTML5 UP
+	html5up.net | @ajlkn
+	Free for personal and commercial use under the CCA 3.0 license (html5up.net/license)
+-->
+<html>
+	<head>
+		<title>Max Melching's Teaching</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+		<link rel="stylesheet" href="assets/css/main.css" />
+		<noscript><link rel="stylesheet" href="assets/css/noscript.css" /></noscript>
+	</head>
+	<!-- <body class="landing is-preload"> -->
+	<body>
+
+		<!-- Page Wrapper -->
+			<div id="page-wrapper">
+
+				<!-- Header -->
+					<header id="header" class="alt">
+						<h1><a href="index.html">Max Melching's Website</a></h1>
+						<nav id="nav">
+							<ul>
+								<li class="special">
+									<a href="#menu" class="menuToggle"><span>Menu</span></a>
+									<div id="menu">
+										<ul>
+											<li><a href="index.html">Home</a></li>
+											<li><a href="research.html">Research</a></li>
+											<li><a href="teaching.html">Teaching</a></li>
+										</ul>
+									</div>
+								</li>
+							</ul>
+						</nav>
+					</header>
+
+				<!-- Banner -->
+				<!-- <section id="banner">
+					<div class="content" style="display: flex; align-items: center; justify-content: center; margin: 10%;">
+						<header>
+							Well, here is a quick disclaimer: as a (current first-year) PhD student,
+							I have not yet had the chance to teach/lecture an actual course.
+							<br />
+
+							BUT I have some code repositories on my GitHub that (in my opinion)
+							qualify as teaching material, as they contain things such as useful
+							visualizations and textbook-style notes/explanations of several topics.
+						</header>
+					</div>
+					<a href="#info" class="more scrolly">Learn More</a>
+				</section> -->
+
+				<section id="summary" class="wrapper style3 special">
+					<!-- Icons from https://fontawesome.com/v5/search -->
+					<!-- I like: abacus (pro version), calculator, shuttle-space, user-astronaut,
+						meteor, satellite, globe, magnet, atom, brain, laptop-code, circle-nodes,
+						cubes, rocket, jedi, book-journal-whills, explosion, hand-spock,
+						award, book-open, chalkboard, graduation-cap, user-graduate, microscope,
+						-->
+
+					<!-- <script>
+					let currentSlide = 0;
+					function changeSlide(n) {
+						const slides = document.querySelectorAll('.slide');
+						slides[currentSlide].classList.remove('active');
+						currentSlide = (currentSlide + n + slides.length) % slides.length;
+						slides[currentSlide].classList.add('active');
+					}
+					</script> -->
+					<!-- Better: define in assets/js/main.js (is done now) -->
+
+					<style>
+					.slide { display: none; }
+					.slide.active { display: block; }
+					.slide-img {
+						width: 100%;
+						height: auto;
+						/* object-fit: contain; */
+						/* object-fit: cover; */
+						object-fit: fill;
+					}
+					</style>
+
+
+					<div class="inner">
+						<header class="major">
+							<h2>Overview</h2>
+							<!-- <p>This page is a guide to the rest.</p> -->
+
+							<!-- V2 -->
+							 <p>
+							Well, here is a quick disclaimer: as a (current first-year) PhD student,
+							I have not yet had the chance to teach/lecture an actual course.
+							<!-- <br /> -->
+							<em>But</em> I have some code repositories on my GitHub that (in my opinion)
+							qualify as teaching material.<!-- , as they contain things such as useful
+							visualizations and textbook-style notes/explanations of several topics. -->
+							</p>
+						</header>
+						<ul class="features">
+							<li class="icon solid fa-magnet">
+								<h3>physics_notes</h3>
+								<!-- TODO: make header link? -->
+								<p>Contains textbook-style notes and explanations of several topics in physics.</p>
+
+								<div class="slideshow-container">
+									<div class="slide active"><img src="images/pdfs/gauss_pillow-1.png" class="slide-img"></div>
+									<div class="slide"><img src="images/pdfs/cylindrical_coordinates.png" class="slide-img"></div>
+									<div class="slide"><img src="images/pdfs/spherical_coordinates.png" class="slide-img"></div>
+									<div class="slide"><img src="images/pdfs/spherical_coordinates_vol_el.png" class="slide-img"></div>
+									<!-- <button onclick="changeSlide(-1, 0)">❮</button>
+									<button onclick="changeSlide(1, 0)">❯</button> -->
+									<button onclick="changeSlide(-1, this.parentElement.dataset.slideshowId)">❮</button>
+									<button onclick="changeSlide(1, this.parentElement.dataset.slideshowId)">❯</button>
+								</div>
+							</li>
+							<li class="icon solid fa-rocket">
+								<h3>minkowski_diagram</h3>
+								<p>Contains visualizations and explanations related to Minkowski diagrams in special relativity.
+									(I am especially proud of the little rocket icon that comes with it.)</p>
+
+								<!-- <script>
+									currentSlide = 0;
+								</script> -->
+								<div class="slideshow-container">
+									<div class="slide active"><img src="images/pdfs/general_demo.png" class="slide-img"></div>
+									<div class="slide"><img src="images/pdfs/synchronization_template.png" class="slide-img"></div>
+									<div class="slide"><img src="images/pdfs/rocket-0.png" class="slide-img"></div>
+									<div class="slide"><img src="images/pdfs/rocket-1.png" class="slide-img"></div>
+									<!-- <button onclick="changeSlide(-1, 1)">❮</button>
+									<button onclick="changeSlide(1, 1)">❯</button> -->
+									<button onclick="changeSlide(-1, this.parentElement.dataset.slideshowId)">❮</button>
+									<button onclick="changeSlide(1, this.parentElement.dataset.slideshowId)">❯</button>
+								</div>
+							</li>
+							<!-- TODO: put slideshow of stuff in those? -->
+							<li class="icon solid fa-calculator">
+								<h3>gwframes</h3>
+								<p>Contains code to generate plots visualizing gravitational-waveforms
+									and their properties.</p>
+
+								<div class="slideshow-container">
+									<div class="slide active"><img src="images/pdfs/all_frames.png" class="slide-img"></div>
+									<div class="slide"><img src="images/pdfs/signal_frame.png" class="slide-img"></div>
+									<div class="slide"><img src="images/pdfs/source_frame.png" class="slide-img"></div>
+									<div class="slide"><img src="images/pdfs/celestial_frame.png" class="slide-img"></div>
+									<button onclick="changeSlide(-1, this.parentElement.dataset.slideshowId)">❮</button>
+									<button onclick="changeSlide(1, this.parentElement.dataset.slideshowId)">❯</button>
+								</div>
+						</ul>
+					</div>
+				</section>
+
+			<!-- Footer -->
+				<footer id="footer">
+					<ul class="icons">
+						<!--<li><a href="#" class="icon brands alt fa-facebook-f"><span class="label">Facebook</span></a></li>
+						<li><a href="#" class="icon brands alt fa-instagram"><span class="label">Instagram</span></a></li>-->
+						<li><a href="https://github.com/MaxMelching/" class="icon brands fa-github"><span class="label">GitHub</span></a></li>
+						<li><a href="mailto:m-melching@web.de" class="icon solid fa-envelope"><span class="label">Email</span></a></li>
+						<li><a href="data/cv_melching.pdf" class="icon solid fa-portrait"><span class="label">CV</span></a></li>
+						<li><a href="https://www.linkedin.com/in/max-melching-108a1a2a0/" class="icon brands alt fa-linkedin-in"><span class="label">LinkedIn</span></a></li>
+						<li><a href="https://twitter.com/max_melching" class="icon brands fa-twitter"><span class="label">Twitter</span></a></li>
+					</ul>
+					<ul class="copyright">
+						<li>&copy; Max Melching. All rights reserved.</li><li>Design: Spectral from <a href="http://html5up.net">HTML5 UP</a></li>
+					</ul>
+				</footer>
+
+			</div>
+
+		<!-- Scripts -->
+			<script src="assets/js/jquery.min.js"></script>
+			<script src="assets/js/jquery.scrollex.min.js"></script>
+			<script src="assets/js/jquery.scrolly.min.js"></script>
+			<script src="assets/js/browser.min.js"></script>
+			<script src="assets/js/breakpoints.min.js"></script>
+			<script src="assets/js/util.js"></script>
+			<script src="assets/js/main.js"></script>
+
+
+		<!-- 100% privacy-first analytics -->
+		<script data-collect-dnt="true" async src="https://scripts.simpleanalyticscdn.com/latest.js"></script>
+	</body>
+</html>

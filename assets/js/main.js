@@ -80,4 +80,40 @@
 
 		}
 
+	// Slideshow functionality - supports multiple independent slideshows
+		function initSlideshows() {
+			document.querySelectorAll('.slideshow-container').forEach(function(container, index) {
+				container.setAttribute('data-slideshow-id', index);
+				container.setAttribute('data-current-slide', '0');
+
+				// Ensure first slide is active
+				const slides = container.querySelectorAll('.slide');
+				slides.forEach((slide, i) => {
+					slide.classList.toggle('active', i === 0);
+				});
+			});
+		}
+
+		function changeSlide(n, containerId) {
+			const container = document.querySelector(`[data-slideshow-id="${containerId}"]`);
+			if (!container) return;
+
+			const slides = container.querySelectorAll('.slide');
+			if (slides.length === 0) return;
+
+			let currentSlide = parseInt(container.getAttribute('data-current-slide'));
+			slides[currentSlide].classList.remove('active');
+			currentSlide = (currentSlide + n + slides.length) % slides.length;
+			container.setAttribute('data-current-slide', currentSlide);
+			slides[currentSlide].classList.add('active');
+		}
+
+		// Initialize slideshows when DOM is ready
+		window.changeSlide = changeSlide;
+		if (document.readyState === 'loading') {
+			document.addEventListener('DOMContentLoaded', initSlideshows);
+		} else {
+			initSlideshows();
+		}
+
 })(jQuery);
