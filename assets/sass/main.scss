@@ -1931,3 +1931,22 @@
 			}
 		}
 	}
+
+
+/* Custom publication style */
+
+.pub-title {
+	@extend h3;
+}
+
+.pub-author {
+	@extend h4;
+}
+
+.pub-year {
+	@extend h4;
+}
+
+.pub-descr {
+	@extend p;
+}
