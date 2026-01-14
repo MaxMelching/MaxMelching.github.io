@@ -61,17 +61,6 @@
 						award, book-open, chalkboard, graduation-cap, user-graduate, microscope,
 						-->
 
-					<!-- <script>
-					let currentSlide = 0;
-					function changeSlide(n) {
-						const slides = document.querySelectorAll('.slide');
-						slides[currentSlide].classList.remove('active');
-						currentSlide = (currentSlide + n + slides.length) % slides.length;
-						slides[currentSlide].classList.add('active');
-					}
-					</script> -->
-					<!-- Better: define in assets/js/main.js (is done now) -->
-
 					<style>
 					.slide { display: none; }
 					.slide.active { display: block; }
@@ -101,8 +90,9 @@
 							</p>
 						</header>
 						<ul class="features">
+						<!-- <ul class="features" style="display: grid; grid-template-columns: 1fr;"> -->
 							<li class="icon solid fa-magnet">
-								<h3>physics_notes</h3>
+								<h3><a href="https://github.com/MaxMelching/physics_notes">physics_notes</a></h3>
 								<!-- TODO: make header link? -->
 								<p>Contains textbook-style notes and explanations of several topics in physics.</p>
 
@@ -111,34 +101,29 @@
 									<div class="slide"><img src="images/pdfs/cylindrical_coordinates.png" class="slide-img"></div>
 									<div class="slide"><img src="images/pdfs/spherical_coordinates.png" class="slide-img"></div>
 									<div class="slide"><img src="images/pdfs/spherical_coordinates_vol_el.png" class="slide-img"></div>
-									<!-- <button onclick="changeSlide(-1, 0)">❮</button>
-									<button onclick="changeSlide(1, 0)">❯</button> -->
 									<button onclick="changeSlide(-1, this.parentElement.dataset.slideshowId)">❮</button>
 									<button onclick="changeSlide(1, this.parentElement.dataset.slideshowId)">❯</button>
 								</div>
 							</li>
+
 							<li class="icon solid fa-rocket">
-								<h3>minkowski_diagram</h3>
+								<h3><a href="https://github.com/MaxMelching/minkowski_diagram">minkowski_diagram</a></h3>
 								<p>Contains visualizations and explanations related to Minkowski diagrams in special relativity.
 									(I am especially proud of the little rocket icon that comes with it.)</p>
 
-								<!-- <script>
-									currentSlide = 0;
-								</script> -->
 								<div class="slideshow-container">
 									<div class="slide active"><img src="images/pdfs/general_demo.png" class="slide-img"></div>
 									<div class="slide"><img src="images/pdfs/synchronization_template.png" class="slide-img"></div>
-									<div class="slide"><img src="images/pdfs/rocket-0.png" class="slide-img"></div>
 									<div class="slide"><img src="images/pdfs/rocket-1.png" class="slide-img"></div>
-									<!-- <button onclick="changeSlide(-1, 1)">❮</button>
-									<button onclick="changeSlide(1, 1)">❯</button> -->
+									<div class="slide"><img src="images/pdfs/vlorentz_demo-0.png" class="slide-img"></div>
+									<div class="slide"><img src="images/pdfs/twin_paradox.png" class="slide-img"></div>
 									<button onclick="changeSlide(-1, this.parentElement.dataset.slideshowId)">❮</button>
 									<button onclick="changeSlide(1, this.parentElement.dataset.slideshowId)">❯</button>
 								</div>
 							</li>
-							<!-- TODO: put slideshow of stuff in those? -->
-							<li class="icon solid fa-calculator">
-								<h3>gwframes</h3>
+
+							<li class="icon solid fa-globe">
+								<h3><a href="https://github.com/MaxMelching/gwframes">gwframes</a></h3>
 								<p>Contains code to generate plots visualizing gravitational-waveforms
 									and their properties.</p>
 
