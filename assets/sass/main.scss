@@ -1358,6 +1358,14 @@
 			@include wrapper(accent7);
 		}
 
+		&.style6 {
+			@include wrapper(accent6);
+		}
+
+		&.style7 {
+			@include wrapper(accent3);
+		}
+
 		@include breakpoint('<=medium') {
 			@include padding(4em, 3em);
 		}
@@ -1937,16 +1945,24 @@
 
 .pub-title {
 	@extend h3;
+	// @extend h2;
+	font-weight: bold !important;
+	// @extend h4;
 }
 
 .pub-author {
 	@extend h4;
+	color: _palette(fg-light) !important;
+	// color: _palette(bg) !important;
 }
 
 .pub-year {
 	@extend h4;
+	color: _palette(fg-light) !important;
+	// color: _palette(bg) !important;
 }
 
 .pub-descr {
 	@extend p;
+	// color: _palette(fg-light) !important;  // Actually better in white, nice contrast
 }
