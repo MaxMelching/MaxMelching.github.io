@@ -28,6 +28,7 @@ PDF_FILES=(
     "gwframes/examples/earth"
     "gwbar/presentation_examples/basic_example"
     "gwtheme/examples/theme_design"
+    "gwtheme/main"
     "minkowski/examples/general_demo"
     "minkowski/examples/rocket"
     "minkowski/examples/synchronization_template"
