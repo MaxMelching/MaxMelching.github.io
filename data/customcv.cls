@@ -1,6 +1,6 @@
 %% start of file `moderncv.cls'.
 %% Original author: Alessandro Plasmati
-% 
+%
 % Modified in 2024 by Max Melching
 %
 % This work may be distributed and/or modified under the
@@ -65,7 +65,7 @@
 
 
 
-\reversemarginpar % Move the margin to the left of the page 
+\reversemarginpar % Move the margin to the left of the page
 
 % \newcommand{\MarginText}[1]{\marginpar{\raggedleft\itshape\small#1}} % New command defining the margin text style
 \newcommand{\MarginText}[1]{%
