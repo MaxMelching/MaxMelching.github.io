@@ -64,3 +64,28 @@ for file in "${PDF_FILES[@]}"; do
 done
 
 echo "All conversions complete!"
+
+# List of PDF files to convert (without extension)
+PNG_FILES=(
+    "gw-skychron/examples/timing_circle_inj4_f56_hlv_annulus"
+    "gw-skychron/examples/timing_circle_hv_true_snr_fixed_spins_nohom_zero_noise_hv_resp"
+    "gw-skychron/examples/timing_circle_inj4_f56_hlv_annulus_resp_globe"
+    "gw-skychron/examples/timing_circle_manual_hlv_geo"
+)
+
+# Convert each PDF to PNG
+for file in "${PNG_FILES[@]}"; do
+    input_file="${INPUT_PATH}/${file}.png"
+    filename="${file##*/}"
+    output_file="${OUTPUT_PATH}/${filename}.png"
+
+    if [ -f "$input_file" ]; then
+        echo "Copying $input_file to $output_file..."
+        cp "$input_file" "$output_file"
+        echo "Done" #: $output_file"
+    else
+        echo "Warning: $input_file not found, skipping..."
+    fi
+done
+
+echo "Copying complete!"

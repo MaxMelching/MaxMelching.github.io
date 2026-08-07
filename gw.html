@@ -63,16 +63,9 @@
 					<div class="inner">
 						<header class="major">
 							<h2>Overview</h2>
-							<!-- <p>This page is a guide to the rest.</p> -->
-
-							<!-- V2 -->
-							 <p>
-							Well, here is a quick disclaimer: as a (current first-year) PhD student,
-							I have not yet had the chance to teach/lecture an actual course.
-							<!-- <br /> -->
-							<em>But</em> I have some code repositories on my GitHub that (in my opinion)
-							qualify as teaching material.<!-- , as they contain things such as useful
-							visualizations and textbook-style notes/explanations of several topics. -->
+							<p>
+							Here is a collection of fun projects I did related to
+							gravitational waves, which can be found on my GitHub.
 							</p>
 						</header>
 
@@ -80,20 +73,22 @@
 						<!-- <ol class="features" style="display: grid; grid-template-columns: 1fr 1fr;"> -->
 						<!-- <ol class="features" style="display: grid; grid-template-columns: 1fr;"> -->
 						<ol class="features" style="display: block !important;"><!-- Equivalent to grid with 1 column -->
-							<li class="icon solid fa-magnet" style="width: 100%;">
+
+
+							<li class="icon solid fa-rocket" style="width: 100%;">
 								<div style="display: flex; gap: 2em; align-items: flex-start;">
 									<div style="flex: 1;">
-										<h3>physics_notes</h3>
-										<p>Contains textbook-style notes and explanations of several topics in physics.</p>
-										<p><a href="https://github.com/MaxMelching/physics_notes" class="button small">Source Code</a></p>
+										<h3>gw-skychron</h3>
+										<p>Contains visualizations for timing circles (isochrons) and more broadly GW skymaps.</p>
+										<p><a href="https://github.com/MaxMelching/gw-skychron" class="button small">Source Code</a></p>
 									</div>
 
 									<div style="flex: 1;">
 										<div class="slideshow-container">
-											<div class="slide active"><img src="images/pdfs/gauss_pillow-1.png" class="slide-img"></div>
-											<div class="slide"><img src="images/pdfs/cylindrical_coordinates.png" class="slide-img"></div>
-											<div class="slide"><img src="images/pdfs/spherical_coordinates.png" class="slide-img"></div>
-											<div class="slide"><img src="images/pdfs/spherical_coordinates_vol_el.png" class="slide-img"></div>
+											<div class="slide active"><img src="images/pdfs/timing_circle_inj4_f56_hlv_annulus.png" class="slide-img"></div>
+											<div class="slide"><img src="images/pdfs/timing_circle_hv_true_snr_fixed_spins_nohom_zero_noise_hv_resp.png" class="slide-img"></div>
+											<div class="slide"><img src="images/pdfs/timing_circle_inj4_f56_hlv_annulus_resp_globe.png" class="slide-img"></div>
+											<div class="slide"><img src="images/pdfs/timing_circle_manual_hlv_geo.png" class="slide-img"></div>
 											<button onclick="changeSlide(-1, this.parentElement.dataset.slideshowId)">❮</button>
 											<button onclick="changeSlide(1, this.parentElement.dataset.slideshowId)">❯</button>
 										</div>
@@ -101,22 +96,49 @@
 								</div>
 							</li>
 
-							<li class="icon solid fa-rocket" style="width: 100%;">
+							<li class="icon solid fa-globe" style="width: 100%;">
 								<div style="display: flex; gap: 2em; align-items: flex-start;">
 									<div style="flex: 1;">
-										<h3>minkowski_diagram</h3>
-										<p>Contains visualizations and explanations related to Minkowski diagrams in special relativity.
-											(I am especially proud of the little rocket icon that comes with it.)</p>
-										<p><a href="https://github.com/MaxMelching/minkowski_diagram" class="button small">Source Code</a></p>
+										<h3>gwframes</h3>
+										<p>Contains code to generate plots visualizing the meaning
+											of gravitational waveform parameters.</p>
+										<p><a href="https://github.com/MaxMelching/gwframes" class="button small">Source Code</a></p>
 									</div>
 
 									<div style="flex: 1;">
 										<div class="slideshow-container">
-											<div class="slide active"><img src="images/pdfs/general_demo.png" class="slide-img"></div>
-											<div class="slide"><img src="images/pdfs/synchronization_template.png" class="slide-img"></div>
-											<div class="slide"><img src="images/pdfs/rocket-1.png" class="slide-img"></div>
-											<div class="slide"><img src="images/pdfs/vlorentz_demo-0.png" class="slide-img"></div>
-											<div class="slide"><img src="images/pdfs/twin_paradox.png" class="slide-img"></div>
+											<div class="slide active"><img src="images/pdfs/all_frames.png" class="slide-img"></div>
+											<div class="slide"><img src="images/pdfs/signal_frame.png" class="slide-img"></div>
+											<div class="slide"><img src="images/pdfs/source_frame.png" class="slide-img"></div>
+											<div class="slide"><img src="images/pdfs/celestial_frame.png" class="slide-img"></div>
+											<button onclick="changeSlide(-1, this.parentElement.dataset.slideshowId)">❮</button>
+											<button onclick="changeSlide(1, this.parentElement.dataset.slideshowId)">❯</button>
+										</div>
+									</div>
+								</div>
+							</li>
+
+							<li class="icon solid fa-globe" style="width: 100%;">
+								<div style="display: flex; gap: 2em; align-items: flex-start;">
+									<div style="flex: 1;">
+										<h3>gwtheme</h3>
+										<p>Provides a custom LaTeX beamer theme that incorporates the
+											gravitational-wave signal progressbar from my other repository
+											<a href="https://github.com/MaxMelching/gwbar">gwbar</a>.
+										</p>
+										<p><a href="https://github.com/MaxMelching/gwtheme" class="button small">Source Code</a></p>
+									</div>
+
+									<div style="flex: 1;">
+										<div class="slideshow-container">
+											<div class="slide active"><img src="images/pdfs/main-0.png" class="slide-img"></div>
+											<div class="slide"><img src="images/pdfs/main-1.png" class="slide-img"></div>
+											<div class="slide"><img src="images/pdfs/main-2.png" class="slide-img"></div>
+											<div class="slide"><img src="images/pdfs/main-3.png" class="slide-img"></div>
+											<div class="slide"><img src="images/pdfs/main-5.png" class="slide-img"></div>
+											<div class="slide"><img src="images/pdfs/main-6.png" class="slide-img"></div>
+											<div class="slide"><img src="images/pdfs/main-7.png" class="slide-img"></div>
+											<div class="slide"><img src="images/pdfs/main-8.png" class="slide-img"></div>
 											<button onclick="changeSlide(-1, this.parentElement.dataset.slideshowId)">❮</button>
 											<button onclick="changeSlide(1, this.parentElement.dataset.slideshowId)">❯</button>
 										</div>
