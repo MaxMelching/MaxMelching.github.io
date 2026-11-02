@@ -1,0 +1,1178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GW source localization from arrival-time differences</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #04060c; color: #e8ecf4;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
+  canvas { display: block; position: fixed; inset: 0; width: 100vw; height: 100vh; }
+  /* While recording, the canvas has a fixed 16:9 size; letterbox it above the controls */
+  canvas.rec { inset: auto; left: 50%; top: calc(50% - 26px); transform: translate(-50%, -50%);
+    width: min(100vw, calc((100vh - 52px) * 16 / 9)); height: auto; aspect-ratio: 16 / 9; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  button.recording { border-color: #ff6b81; color: #ff6b81; }
+  #controls { position: fixed; left: 0; right: 0; bottom: 0; display: flex; gap: 8px;
+    align-items: center; padding: 10px 18px; background: rgba(0, 0, 0, 0.55); font-size: 13px; }
+  button, select { background: #1a2233; color: #e8ecf4; border: 1px solid #33405a; border-radius: 6px;
+    padding: 4px 10px; font: inherit; cursor: pointer; }
+  button.on { border-color: #5ad1ff; color: #5ad1ff; }
+  input[type=range] { flex: 1; min-width: 80px; accent-color: #5ad1ff; }
+  #chapters button { white-space: nowrap; }
+  #time { font-variant-numeric: tabular-nums; min-width: 84px; text-align: right; color: #9aa6bd; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="controls">
+  <button id="play">Pause</button>
+  <button id="restart">Restart</button>
+  <button id="rec" title="Plays the animation from the start at the selected speed and records it to a video file that downloads when it ends. Stopping early discards it.">Record</button>
+  <span id="chapters"></span>
+  <select id="chapsel" title="Jump to a scene" style="display: none"></select>
+  <input id="scrub" type="range" min="0" max="1" step="0.01" value="0">
+  <span id="time"></span>
+  <select id="speed">
+    <option value="0.5">0.5×</option><option value="1" selected>1×</option>
+    <option value="1.5">1.5×</option><option value="2">2×</option>
+  </select>
+</div>
+<script>
+"use strict";
+// ---------------------------------------------------------------- helpers
+const D2R = Math.PI / 180, TAU = 2 * Math.PI;
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const ease = x => { x = clamp(x); return x * x * (3 - 2 * x); };
+const lerp = (a, b, u) => a + (b - a) * u;
+const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const mul = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm = a => Math.hypot(a[0], a[1], a[2]);
+const unit = a => mul(a, 1 / norm(a));
+const llv = (lat, lon) => {   // degrees -> unit vector (Earth-fixed)
+  lat *= D2R; lon *= D2R;
+  return [Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat)];
+};
+function rng(seed) { return () => (seed = (seed * 16807) % 2147483647) / 2147483647; }
+
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+let W, H, VH, U, recording = false;
+function resize() {
+  // Recording uses a fixed 1280x720 layout rendered at 1.5x, i.e. a 1920x1080 video, regardless of the window
+  const s = recording ? 1.5 : window.devicePixelRatio || 1;
+  if (recording) { W = 1280; H = 720; VH = H - 20; }
+  else { W = Math.max(innerWidth, 320); H = Math.max(innerHeight, 400); VH = H - 60; }
+  U = Math.min(W, VH);
+  cv.width = Math.round(W * s); cv.height = Math.round(H * s); ctx.setTransform(s, 0, 0, s, 0, 0);
+}
+addEventListener('resize', resize); resize();
+
+const FONT = 'system-ui,-apple-system,"Segoe UI",sans-serif';
+function txt(s, x, y, o = {}) {
+  ctx.save();
+  ctx.globalAlpha *= (o.alpha ?? 1);
+  ctx.fillStyle = o.col || '#e8ecf4';
+  ctx.font = `${o.weight || 400} ${o.size || 14}px ${FONT}`;
+  ctx.textAlign = o.align || 'left'; ctx.textBaseline = o.base || 'middle';
+  ctx.fillText(s, x, y);
+  const w = ctx.measureText(s).width;
+  ctx.restore();
+  return w;
+}
+// Text with subscripts, e.g. rich([['Δt'], ['HL', 1], [' = 6.5 ms']], ...)
+function rich(parts, x, y, o = {}) {
+  const size = o.size || 14;
+  ctx.save();
+  let total = 0;
+  for (const [s, isSub] of parts) {
+    ctx.font = `${o.weight || 400} ${isSub ? size * 0.72 : size}px ${FONT}`;
+    total += ctx.measureText(s).width;
+  }
+  ctx.restore();
+  let cx = o.align === 'center' ? x - total / 2 : o.align === 'right' ? x - total : x;
+  for (const [s, isSub] of parts) {
+    cx += txt(s, cx, y + (isSub ? size * 0.28 : 0), { ...o, align: 'left', size: isSub ? size * 0.72 : size });
+  }
+}
+function arrow(x0, y0, x1, y1, col, w = 2, hs = 10, dash = null, both = false) {
+  ctx.save();
+  ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = w;
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+  ctx.setLineDash([]);
+  const head = (xa, ya, xb, yb) => {
+    const a = Math.atan2(yb - ya, xb - xa);
+    ctx.beginPath(); ctx.moveTo(xb, yb);
+    ctx.lineTo(xb - hs * Math.cos(a - 0.4), yb - hs * Math.sin(a - 0.4));
+    ctx.lineTo(xb - hs * Math.cos(a + 0.4), yb - hs * Math.sin(a + 0.4));
+    ctx.closePath(); ctx.fill();
+  };
+  head(x0, y0, x1, y1);
+  if (both) head(x1, y1, x0, y0);
+  ctx.restore();
+}
+function line(x0, y0, x1, y1, col, w = 1, dash = null) {
+  ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = w;
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); ctx.restore();
+}
+function glowLine(px, py, nx, ny, len, col, w, alpha = 1) {
+  ctx.save(); ctx.globalAlpha *= alpha;
+  ctx.shadowColor = col; ctx.shadowBlur = 14;
+  line(px - nx * len, py - ny * len, px + nx * len, py + ny * len, col, w);
+  ctx.restore();
+}
+function detDot(x, y, col, lit, age, r = 6) {
+  ctx.save();
+  const a0 = ctx.globalAlpha;
+  if (lit) {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r * 4);
+    g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.globalAlpha = 0.7 * a0;
+    ctx.beginPath(); ctx.arc(x, y, r * 4, 0, TAU); ctx.fill();
+    ctx.globalAlpha = a0;
+  }
+  if (age >= 0 && age < 1.2) {   // arrival pulse
+    ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.globalAlpha = a0 * (1 - age / 1.2);
+    ctx.beginPath(); ctx.arc(x, y, r + age * 45, 0, TAU); ctx.stroke();
+    ctx.globalAlpha = a0;
+  }
+  ctx.fillStyle = lit ? col : '#1b2333'; ctx.strokeStyle = col; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); ctx.stroke();
+  ctx.restore();
+}
+function star5(x, y, r, col) {
+  ctx.save(); ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 10; ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.45 : r;
+    ctx.lineTo(x + rr * Math.cos(a), y + rr * Math.sin(a));
+  }
+  ctx.closePath(); ctx.fill(); ctx.restore();
+}
+function roundBox(x, y, w, h, r = 8) {
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// ---------------------------------------------------------------- stars
+const STARS = (() => { const r = rng(7), s = [];
+  for (let i = 0; i < 420; i++) s.push([r(), r(), 0.2 + 0.8 * r() ** 3, r()]);
+  return s; })();
+function drawStars(ox = 0, oy = 0, alpha = 1) {
+  ctx.save();
+  for (const [x, y, b] of STARS) {
+    const px = ((x * W + ox) % W + W) % W, py = ((y * H + oy) % H + H) % H;
+    ctx.globalAlpha = alpha * b; ctx.fillStyle = '#dfe8ff';
+    ctx.fillRect(px, py, b > 0.7 ? 1.8 : 1.1, b > 0.7 ? 1.8 : 1.1);
+  }
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------- detectors & geometry
+const RC = 6371 / 299792.458 * 1000;   // Earth radius light travel time [ms]
+const DET = [
+  { id: 'H', name: 'LIGO Hanford', lat: 46.455, lon: -119.408, col: '#ffb454' },
+  { id: 'L', name: 'LIGO Livingston', lat: 30.563, lon: -90.774, col: '#ff6b81' },
+  { id: 'V', name: 'Virgo', lat: 43.631, lon: 10.504, col: '#b48cff' },
+];
+DET.forEach(d => d.r = llv(d.lat, d.lon));
+const [dH, dL, dV] = DET;
+
+// Globe view (scene 2): looking at (20N, 50W); the wave propagates in the screen plane,
+// at ALPHA below the screen-right direction. Chosen such that the source is well away from
+// the plane of the three detectors (otherwise source and mirror image blend together).
+const LAT0 = 20 * D2R, LON0 = -50 * D2R, ALPHA = 60 * D2R;
+const C0 = [Math.cos(LAT0) * Math.cos(LON0), Math.cos(LAT0) * Math.sin(LON0), Math.sin(LAT0)];
+const E1 = [-Math.sin(LON0), Math.cos(LON0), 0];   // screen right (east)
+const E2 = cross(C0, E1);                            // screen up (north)
+const KV = sub(mul(E1, Math.cos(ALPHA)), mul(E2, Math.sin(ALPHA)));   // propagation direction
+const SV = mul(KV, -1);                                               // source direction
+const KC = [Math.cos(ALPHA), Math.sin(ALPHA)];                         // propagation on canvas
+const globeProj = v => [dot(v, E1), dot(v, E2), dot(v, C0)];
+// Arrival time relative to the wave crossing Earth's centre [ms]
+DET.forEach(d => d.t = dot(d.r, KV) * RC);
+
+// Pair (a, b): Δt = t_b - t_a, baseline axis pointing from b to a, so that cos θ = Δt / (d/c)
+function pair(a, b) {
+  const bv = sub(a.r, b.r), ax = unit(bv), cth = dot(ax, SV);
+  const u = unit(sub(SV, mul(ax, cth)));   // ring parametrized so that φ = 0 is the source
+  return { a, b, dt: b.t - a.t, dc: norm(bv) * RC, km: norm(bv) * 6371, ax, cth, th: Math.acos(cth),
+    u, v: cross(ax, u) };
+}
+const HL = pair(dH, dL), HV = pair(dH, dV), LV = pair(dL, dV);
+HL.col = '#ff9f68'; HV.col = '#7bdff2'; LV.col = '#c3a6ff';
+HL.lab = 'HL'; HV.lab = 'HV'; LV.lab = 'LV';
+const PAIRS = [HL, HV, LV];
+// Mirror of the source w.r.t. the plane through the three detectors
+const PN = unit(cross(sub(dH.r, dL.r), sub(dV.r, dL.r)));
+const SM = sub(SV, mul(PN, 2 * dot(SV, PN)));
+
+const SIG = 0.5;   // timing uncertainty per pair [ms], illustrative
+// Points satisfying all three timing constraints within SIG
+function patch(c) {
+  const u0 = unit(cross(c, [0, 0, 1])), v0 = cross(c, u0), pts = [], st = 0.006;
+  for (let x = -0.45; x <= 0.45; x += st) for (let y = -0.45; y <= 0.45; y += st) {
+    const n = unit(add(c, add(mul(u0, x), mul(v0, y))));
+    if (PAIRS.every(P => Math.abs(dot(n, P.ax) - P.cth) < SIG / P.dc)) pts.push(n);
+  }
+  return pts;
+}
+const PATCH = [...patch(SV), ...patch(SM)];
+
+// ---------------------------------------------------------------- cameras
+// A camera is an orthonormal basis (right, up, depth towards the viewer) in Earth coordinates.
+const camProj = c => v => [dot(v, c.r), dot(v, c.u), dot(v, c.d)];
+// 2D sketch of scenes 3/4: H on the left, L on the right, source up-left in the screen plane
+const CAM3 = { r: mul(HL.ax, -1), u: HL.u, d: mul(HL.v, -1) };
+function yawCam(c, b) {   // rotate about the screen-up axis
+  const cb = Math.cos(b), sb = Math.sin(b);
+  return { r: add(mul(c.r, cb), mul(c.d, sb)), u: c.u, d: sub(mul(c.d, cb), mul(c.r, sb)) };
+}
+const MID = unit(add(SV, SM)), PSI0 = -Math.atan2(MID[1], MID[0]);
+const PSI_OFF = -10, CHI = 15;   // sky-sphere view azimuth offset and tilt [deg]; found by searching for face-on rings
+function cam5(tl) {   // sky-sphere camera of scene 5, slowly rotating
+  const psi = PSI0 + PSI_OFF * D2R - tl * 0.6 * D2R, chi = CHI * D2R;
+  const sp = Math.sin(psi), cp = Math.cos(psi), sc = Math.sin(chi), cc = Math.cos(chi);
+  return { r: [sp, cp, 0], u: [-sc * cp, sc * sp, cc], d: [cc * cp, -cc * sp, sc] };
+}
+// Rotate camera a towards camera b by fraction w (rotation about a fixed axis, i.e. slerp)
+function rotCam(a, b, w) {
+  const Q = [0, 1, 2].map(j => [0, 1, 2].map(k => b.r[j] * a.r[k] + b.u[j] * a.u[k] + b.d[j] * a.d[k]));
+  const ang = Math.acos(clamp((Q[0][0] + Q[1][1] + Q[2][2] - 1) / 2, -1, 1));
+  if (ang < 1e-6) return a;
+  const k = unit([Q[2][1] - Q[1][2], Q[0][2] - Q[2][0], Q[1][0] - Q[0][1]]);
+  const c = Math.cos(ang * w), s = Math.sin(ang * w);
+  const rod = v => add(add(mul(v, c), mul(cross(k, v), s)), mul(k, dot(k, v) * (1 - c)));
+  return { r: rod(a.r), u: rod(a.u), d: rod(a.d) };
+}
+
+// ---------------------------------------------------------------- waveform
+// Toy chirp: f ∝ (-t)^(-3/8) before merger, exponentially damped ringdown after.
+const K_CH = 27, EPS = 0.001;
+const F_RD = K_CH * 0.625 * Math.pow(EPS, -0.375);
+const PH_RD = -TAU * K_CH * Math.pow(EPS, 0.625);
+function hwave(tp) {   // tp: seconds relative to merger
+  if (tp < 0) {
+    const x = -tp + EPS, f = K_CH * 0.625 * Math.pow(x, -0.375);
+    return Math.pow(f / F_RD, 2 / 3) * Math.cos(-TAU * K_CH * Math.pow(x, 0.625));
+  }
+  return Math.exp(-tp / 0.004) * Math.cos(PH_RD + TAU * F_RD * tp);
+}
+// Fill the screen with a plane-wave strain field (bands perpendicular to (kx, ky)).
+function waveField(ox, oy, kx, ky, tauOf, alpha) {
+  if (alpha <= 0) return;
+  const L = Math.hypot(W, H) * 1.2, N = 700;
+  const g = ctx.createLinearGradient(ox - kx * L, oy - ky * L, ox + kx * L, oy + ky * L);
+  for (let i = 0; i <= N; i++) {
+    const s = -L + 2 * L * i / N, hv = hwave(tauOf(s) / 1000), a = alpha * Math.min(1, Math.abs(hv));
+    g.addColorStop(i / N, hv >= 0 ? `rgba(90,209,255,${0.40 * a})` : `rgba(140,110,255,${0.16 * a})`);
+  }
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+
+// ---------------------------------------------------------------- globe
+const LAND_LL = [
+  [[-168,66],[-162,70],[-140,70],[-125,70],[-95,72],[-80,73],[-65,60],[-55,52],[-66,45],[-70,42],[-76,38],[-76,35],[-81,31],[-80,25],[-83,29],[-90,30],[-97,27],[-97,22],[-87,21],[-88,16],[-83,10],[-79,9],[-85,12],[-92,15],[-105,20],[-110,24],[-115,30],[-118,34],[-124,40],[-124,48],[-130,55],[-140,60],[-150,60],[-160,58],[-165,62]],
+  [[-55,60],[-45,60],[-20,70],[-20,80],[-60,82],[-70,78],[-55,70]],
+  [[-80,9],[-75,11],[-62,11],[-50,0],[-35,-5],[-39,-15],[-48,-25],[-58,-35],[-65,-42],[-68,-52],[-75,-50],[-72,-30],[-71,-18],[-81,-5]],
+  [[-17,15],[-17,21],[-10,30],[-6,36],[10,37],[20,32],[32,31],[35,28],[43,12],[51,12],[40,-15],[35,-25],[20,-35],[17,-29],[12,-17],[13,-5],[9,4],[-8,4],[-13,8]],
+  [[-9,37],[-9,43],[-2,44],[-4,48],[2,51],[8,54],[10,58],[5,60],[5,62],[15,68],[25,71],[40,68],[60,70],[60,45],[40,41],[28,41],[26,38],[22,37],[20,40],[16,38],[12,44],[13,45],[8,44],[3,43],[-1,37]],
+  [[-5,50],[1,51],[2,53],[-2,56],[-3,58.5],[-6,58],[-5,55],[-3,54],[-5,52]],
+];
+const LANDS = LAND_LL.map(poly => {
+  const out = [];
+  poly.forEach((p, i) => {
+    const q = poly[(i + 1) % poly.length], n = Math.ceil(Math.max(Math.abs(q[0] - p[0]), Math.abs(q[1] - p[1])) / 2);
+    for (let j = 0; j < n; j++) out.push(llv(lerp(p[1], q[1], j / n), lerp(p[0], q[0], j / n)));
+  });
+  return out;
+});
+const GRAT = [];
+for (let lat = -60; lat <= 60; lat += 30) { const l = []; for (let lon = -180; lon <= 180; lon += 3) l.push(llv(lat, lon)); GRAT.push(l); }
+for (let lon = -180; lon < 180; lon += 30) { const l = []; for (let lat = -90; lat <= 90; lat += 3) l.push(llv(lat, lon)); GRAT.push(l); }
+
+// Polyline of 3D points; only the segments on the requested side (front: p[2] > 0). Projections may
+// also return non-finite points (behind a perspective camera) and a seam key p[4] = ±1 near the edge
+// of a map projection; the line is broken there, and at implausibly long jumps.
+function strokeSide(pts, S, front, col, w = 1, dash = null) {
+  ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = w; if (dash) ctx.setLineDash(dash);
+  ctx.beginPath();
+  const jump = 0.75 * Math.max(W, H);
+  let prev = null;
+  for (const v of pts) {
+    const p = S(v);
+    if (!Number.isFinite(p[0]) || !Number.isFinite(p[2]) || (p[2] > 0) !== front) { prev = null; continue; }
+    if (prev && (p[4] * prev[4] < 0 || Math.hypot(p[0] - prev[0], p[1] - prev[1]) > jump)) prev = null;
+    prev ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]);
+    prev = p;
+  }
+  ctx.stroke(); ctx.restore();
+}
+// Clip a projected polygon ([X, Y, depth] per vertex) to the visible hemisphere; the parts
+// behind are replaced by an arc along the limb between the exit and entry points.
+function clipHemisphere(P) {
+  const n = P.length, start = P.findIndex(p => p[2] > 0);
+  if (start < 0) return [];
+  const out = [], cut = (p, q) => {
+    const t = p[2] / (p[2] - q[2]), X = lerp(p[0], q[0], t), Y = lerp(p[1], q[1], t), l = Math.hypot(X, Y) || 1;
+    return [X / l, Y / l];
+  };
+  let exitAng = null;
+  for (let i = 0; i < n; i++) {
+    const p = P[(start + i) % n], q = P[(start + i + 1) % n];
+    if (p[2] > 0) out.push([p[0], p[1]]);
+    if (p[2] > 0 && q[2] <= 0) { const e = cut(p, q); out.push(e); exitAng = Math.atan2(e[1], e[0]); }
+    if (p[2] <= 0 && q[2] > 0) {
+      const e = cut(q, p), a1 = Math.atan2(e[1], e[0]);
+      let da = a1 - exitAng; da -= TAU * Math.round(da / TAU);   // shorter way round
+      for (let j = 1; j < 16; j++) { const a = exitAng + da * j / 16; out.push([Math.cos(a), Math.sin(a)]); }
+      out.push(e);
+    }
+  }
+  return out;
+}
+function drawGlobe(cx, cy, R, proj, alpha = 1) {
+  ctx.save(); ctx.globalAlpha *= alpha;
+  let g = ctx.createRadialGradient(cx, cy, R * 0.95, cx, cy, R * 1.22);
+  g.addColorStop(0, 'rgba(90,170,255,0.35)'); g.addColorStop(1, 'rgba(90,170,255,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, R * 1.22, 0, TAU); ctx.fill();
+  g = ctx.createRadialGradient(cx - R * 0.35, cy - R * 0.35, R * 0.1, cx, cy, R);
+  g.addColorStop(0, '#2a6fc0'); g.addColorStop(1, '#0b2347');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU); ctx.fill();
+  if (R > 10) {
+    ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU); ctx.clip();
+    ctx.fillStyle = 'rgba(96,170,120,0.55)'; ctx.strokeStyle = 'rgba(160,220,170,0.6)'; ctx.lineWidth = 0.8;
+    for (const poly of LANDS) {
+      const pts = clipHemisphere(poly.map(proj));
+      if (pts.length < 3) continue;
+      ctx.beginPath();
+      pts.forEach(([X, Y], i) => i ? ctx.lineTo(cx + X * R, cy - Y * R) : ctx.moveTo(cx + X * R, cy - Y * R));
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+    const S = v => { const p = proj(v); return [cx + p[0] * R, cy - p[1] * R, p[2]]; };
+    for (const l of GRAT) strokeSide(l, S, true, 'rgba(255,255,255,0.10)', 0.7);
+    ctx.restore();
+  }
+  ctx.strokeStyle = 'rgba(170,210,255,0.5)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU); ctx.stroke();
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------- sky sphere pieces (scenes 4-6)
+const SKY = [];
+for (let dec = -60; dec <= 60; dec += 30) { const l = []; for (let ra = 0; ra <= 360; ra += 3) l.push(llv(dec, ra)); SKY.push(l); }
+for (let ra = 0; ra < 360; ra += 30) { const l = []; for (let dec = -90; dec <= 90; dec += 3) l.push(llv(dec, ra)); SKY.push(l); }
+const ringPt = (P, cth, phi) => {
+  const s = Math.sqrt(Math.max(0, 1 - cth * cth));
+  return add(mul(P.ax, cth), mul(add(mul(P.u, Math.cos(phi)), mul(P.v, Math.sin(phi))), s));
+};
+function sphereGeo() { return { cx: W / 2, cy: VH * 0.5, Rs: Math.min(W * 0.4, VH * 0.44) }; }
+function skyBackdrop(cx, cy, Rs, alpha) {
+  ctx.save(); ctx.globalAlpha *= alpha;
+  const g = ctx.createRadialGradient(cx - Rs * 0.3, cy - Rs * 0.3, Rs * 0.1, cx, cy, Rs);
+  g.addColorStop(0, 'rgba(50,70,120,0.28)'); g.addColorStop(1, 'rgba(20,30,60,0.15)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, Rs, 0, TAU); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.restore();
+}
+function skyGrid(S, front, alpha) {
+  for (const l of SKY) strokeSide(l, S, front, `rgba(255,255,255,${(front ? 0.22 : 0.04) * alpha})`, 0.7);
+}
+// Baseline axis of pair P through the centre, dashed in the ring's colour
+function baselineAxis(S, cx, cy, P, front, alpha) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha * (front ? 0.9 : 0.35);
+  for (const sg of [1, -1]) {
+    const p = S(mul(P.ax, 1.12 * sg));
+    if ((p[2] > 0) === front) line(cx, cy, p[0], p[1], P.col, 1.4, [6, 5]);
+  }
+  ctx.restore();
+}
+// Cone generators from the centre to the H–L ring, every 30°
+function generators(S, cx, cy, upto, front, alpha) {
+  for (let j = 0; j <= 12 && j * TAU / 12 <= upto + 1e-9; j++) {
+    const p = S(ringPt(HL, HL.cth, j * TAU / 12)); if ((p[2] > 0) !== front) continue;
+    line(cx, cy, p[0], p[1], `rgba(255,159,104,${0.45 * alpha * (front ? 1 : 0.3)})`, 1);
+  }
+}
+function sigmaLabel(alpha) {
+  if (alpha > 0) rich([['σ'], ['t', 1], [` = ${SIG} ms per pair (illustrative)`]], W - 20, 24,
+    { align: 'right', size: 13, col: '#cfd7e6', alpha });
+}
+
+// Everything on the sky sphere (scenes 5 and 6). S maps a unit vector to [x, y, front, scale, seam]:
+// front > 0 on the visible side, scale in px per radian (for the patch dots), seam = ±1 near a map edge.
+// o: { cx, cy (sphere centre on screen), tl, prog[3], bw, coneA, mk, pa, axA, bandA, ringA, labA, gridA, earth }
+function drawSky(S, o) {
+  const N = 240, big = 0.3 * Math.max(W, H);
+  for (const front of [false, true]) {
+    if (front && o.earth) {   // Earth with detectors at the centre
+      const { x, y, R, proj, alpha } = o.earth;
+      drawGlobe(x, y, R, proj, alpha);
+      ctx.save(); ctx.globalAlpha *= alpha;
+      for (const d of DET) {
+        const p = proj(d.r); if (p[2] < 0) continue;
+        detDot(x + p[0] * R, y - p[1] * R, d.col, true, -1, 3);
+      }
+      ctx.restore();
+    }
+    skyGrid(S, front, o.gridA ?? 1);
+
+    PAIRS.forEach((P, i) => {
+      if (o.prog[i] <= 0) return;
+      // Baseline axis, dimmed once the error bands come in
+      baselineAxis(S, o.cx, o.cy, P, front, (i === 0 ? 1 : ease(o.prog[i] * 2)) * (1 - 0.65 * o.bw) * o.axA);
+      // Band of width ±SIG in Δt
+      if (o.bw > 0 && o.bandA > 0) {
+        const w = SIG / P.dc * o.bw;
+        const cLo = clamp(P.cth + w, -1, 1), cHi = clamp(P.cth - w, -1, 1), lo = [], hi = [];
+        for (let j = 0; j < N; j++) { lo.push(S(ringPt(P, cLo, j / N * TAU))); hi.push(S(ringPt(P, cHi, j / N * TAU))); }
+        // A quad is drawable if all corners are valid, on this side, not across a map seam and not huge
+        const ok = lo.map((_, j) => {
+          const q = [lo[j], lo[(j + 1) % N], hi[(j + 1) % N], hi[j]];
+          return q.every(p => Number.isFinite(p[0])) && (q[0][2] + q[2][2] > 0) === front &&
+            !q.some(p => p[4] * q[0][4] < 0) && !q.some(p => Math.hypot(p[0] - q[0][0], p[1] - q[0][1]) > big);
+        });
+        // Fill contiguous runs of quads as single shapes (no seams between quads)
+        ctx.save(); ctx.fillStyle = P.col; ctx.globalAlpha = (front ? 0.30 : 0.10) * o.bandA;
+        const fillRun = run => {
+          ctx.beginPath();
+          run.forEach((j, k) => k ? ctx.lineTo(lo[j][0], lo[j][1]) : ctx.moveTo(lo[j][0], lo[j][1]));
+          for (let k = run.length - 1; k >= 0; k--) ctx.lineTo(hi[run[k]][0], hi[run[k]][1]);
+          ctx.closePath(); ctx.fill();
+        };
+        if (ok.every(Boolean)) {   // whole annulus
+          ctx.beginPath();
+          lo.forEach((p, j) => j ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath();
+          hi.forEach((p, j) => j ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath();
+          ctx.fill('evenodd');
+        } else {
+          const j0 = ok.indexOf(false);
+          let run = [];
+          for (let k = 1; k <= N; k++) {
+            const j = (j0 + k) % N;
+            if (ok[j]) { if (!run.length) run.push(j); run.push((j + 1) % N); }
+            else { if (run.length > 1) fillRun(run); run = []; }
+          }
+          if (run.length > 1) fillRun(run);
+        }
+        ctx.restore();
+      }
+      const pts = [];
+      for (let j = 0; j <= Math.floor(o.prog[i] * N); j++) pts.push(ringPt(P, P.cth, j / N * TAU));
+      ctx.save(); ctx.globalAlpha *= o.ringA;
+      strokeSide(pts, S, front, P.col, front ? 2.2 : 1.5, front ? null : [4, 4]);
+      ctx.restore();
+      if (i === 0 && o.coneA > 0) generators(S, o.cx, o.cy, TAU, front, o.coneA);
+      // Label at the drawn ring's highest front point
+      if (front && o.labA > 0) {
+        let best = null;
+        for (const v of pts) { const p = S(v); if (p[2] > 0.15 && (!best || p[1] < best[1])) best = p; }
+        const a = (i === 0 ? ease(o.tl / 0.6) : ease(o.prog[i] * 3)) * o.labA;
+        if (best) rich([['Δt'], [P.lab, 1]], best[0] + 6, best[1] - 12, { size: 13, col: P.col, weight: 600, alpha: a });
+      }
+    });
+
+    // Timing-only localization patches
+    if (o.pa > 0) {
+      ctx.save(); ctx.fillStyle = '#ffe066'; ctx.globalAlpha = o.pa * (front ? 0.55 : 0.2);
+      for (const v of PATCH) {
+        const p = S(v); if (!Number.isFinite(p[0]) || (p[2] > 0) !== front) continue;
+        const sz = Math.max(1.5, 0.0072 * p[3]);
+        ctx.fillRect(p[0] - sz / 2, p[1] - sz / 2, sz, sz);
+      }
+      ctx.restore();
+    }
+    // Intersections: true source and its mirror image
+    if (o.mk > 0) {
+      const pulse = 1 + 0.15 * Math.sin(o.tl * 5);
+      const ps = S(SV), pm = S(SM);
+      ctx.save(); ctx.globalAlpha = o.mk * (front ? 1 : 0.4);
+      if (Number.isFinite(ps[0]) && (ps[2] > 0) === front) {
+        star5(ps[0], ps[1], 9 * pulse, '#ffe066');
+        txt('source', ps[0] + 14, ps[1] - 4, { size: 13, weight: 600, col: '#ffe066' });
+      }
+      if (Number.isFinite(pm[0]) && (pm[2] > 0) === front) {
+        ctx.strokeStyle = '#ffe066'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(pm[0], pm[1], 8 * pulse, 0, TAU); ctx.stroke();
+        txt('mirror image', pm[0] + 14, pm[1] + 6, { size: 13, weight: 600, col: '#ffe066' });
+      }
+      ctx.restore();
+    }
+  }
+}
+
+// ---------------------------------------------------------------- scene 1: merger and propagation
+const TM = 4.5, TARR = 10.5, Z0 = 10, Z1 = 11.8;
+const W0 = TAU * 0.6, A_ORB = W0 * Math.pow(TM, 0.375) * 1.6;
+const orbPhase = t => A_ORB * (Math.pow(TM, 0.625) - Math.pow(Math.max(TM - Math.min(t, TM), 0), 0.625));
+const CRESTS = (() => { const c = [];   // emission times of GW crests (GW phase = 2 × orbital phase = 2π n)
+  for (let n = 1; ; n++) { const x = Math.pow(TM, 0.625) - Math.PI * n / A_ORB; if (x <= 0) break; c.push(TM - Math.pow(x, 1.6)); }
+  return c; })();
+
+function layout2() {
+  if (W > VH * 1.25) {
+    const R = Math.min(W * 0.19, VH * 0.32);
+    return { land: true, gx: W * 0.26, gy: VH * 0.5, R, tx0: W * 0.53, tx1: W * 0.95,
+      rows: [VH * 0.26, VH * 0.48, VH * 0.70], amp: VH * 0.075 };
+  }
+  const R = Math.min(W * 0.3, VH * 0.19);
+  return { land: false, gx: W * 0.5, gy: VH * 0.24, R, tx0: W * 0.1, tx1: W * 0.93,
+    rows: [VH * 0.56, VH * 0.70, VH * 0.84], amp: VH * 0.05 };
+}
+
+function scene1(t) {
+  const v = 0.3 * U, D = v * (TARR - TM), rE = 0.025 * U;
+  const dir = KC, tw = Math.min(t, Z0);
+  const rFront = v * (tw - TM);
+  const ramp = (g, w) => g <= 0 ? 0 : g < w ? g * g / (2 * w) : g - w / 2;
+  const camD = Math.min(D, 0.3 * U + ramp(rFront - 0.45 * U, 0.4 * U));
+  // world -> screen: everything is placed relative to Earth, which lets the zoom end on the scene-2 globe
+  const lay = layout2(), u = ease((t - Z0) / (Z1 - Z0));
+  const S = Math.exp(u * Math.log(lay.R / rE));
+  const ex0 = W / 2 + (D - camD) * dir[0], ey0 = VH / 2 + (D - camD) * dir[1];
+  const ex = lerp(ex0, lay.gx, u), ey = lerp(ey0, lay.gy, u);
+  const toS = (wx, wy) => [ex + (wx - D * dir[0]) * S, ey + (wy - D * dir[1]) * S];
+
+  drawStars(-camD * dir[0] * 0.15, -camD * dir[1] * 0.15);
+  const [sx, sy] = toS(0, 0);
+
+  // GW crests emitted during the inspiral
+  ctx.save();
+  ctx.lineWidth = 1.6;
+  for (const te of CRESTS) {
+    if (te > tw) break;
+    const r = v * (tw - te), amp = Math.min(1, 0.35 * Math.pow((TM - te) / TM, -0.25));
+    ctx.strokeStyle = `rgba(90,209,255,${(1 - u) * 0.75 * amp / (1 + r / (0.6 * U))})`;
+    ctx.beginPath(); ctx.arc(sx, sy, r * S, 0, TAU); ctx.stroke();
+  }
+  // Merger wavefront plus a few ringdown crests
+  if (tw >= TM) {
+    for (let m = 3; m >= 0; m--) {
+      const te = TM + m * 0.07; if (te > tw) continue;
+      const r = v * (tw - te), a = (1 - u) * (m ? 0.6 * Math.exp(-m) : 1);
+      ctx.strokeStyle = `rgba(190,240,255,${a})`; ctx.lineWidth = m ? 2 : 3.5;
+      ctx.shadowColor = '#5ad1ff'; ctx.shadowBlur = m ? 0 : 18;
+      ctx.beginPath(); ctx.arc(sx, sy, r * S, 0, TAU); ctx.stroke();
+    }
+  }
+  ctx.restore();
+
+  // Binary
+  const a0 = 0.07 * U, rBH = 0.011 * U * S;
+  if (t < TM) {
+    const ph = orbPhase(t), a = a0 * Math.pow((TM - t) / TM, 0.25) * S;
+    for (const sg of [1, -1]) {
+      const bx = sx + sg * a / 2 * Math.cos(ph), by = sy + sg * a / 2 * Math.sin(ph);
+      const g = ctx.createRadialGradient(bx, by, rBH * 0.8, bx, by, rBH * 2.4);
+      g.addColorStop(0, 'rgba(255,190,120,0.9)'); g.addColorStop(1, 'rgba(255,140,60,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(bx, by, rBH * 2.4, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(bx, by, rBH, 0, TAU); ctx.fill();
+    }
+  } else {
+    const dt = t - TM, rr = rBH * 1.35 * (1 + 0.15 * Math.exp(-dt / 0.3) * Math.cos(TAU * 6 * dt));
+    const g = ctx.createRadialGradient(sx, sy, rr * 0.8, sx, sy, rr * 2.4);
+    g.addColorStop(0, 'rgba(255,190,120,0.9)'); g.addColorStop(1, 'rgba(255,140,60,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sx, sy, rr * 2.4, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(sx, sy, rr, 0, TAU); ctx.fill();
+    // Merger "flash": a few decaying blinks
+    const I = Math.exp(-dt / 0.7) * 0.5 * (1 + Math.cos(TAU * 2.5 * dt));
+    if (I > 0.005) {
+      const R = 0.3 * U * (0.4 + I);
+      const g2 = ctx.createRadialGradient(sx, sy, 0, sx, sy, R);
+      g2.addColorStop(0, `rgba(255,255,255,${I})`); g2.addColorStop(0.25, `rgba(200,180,255,${0.6 * I})`);
+      g2.addColorStop(1, 'rgba(120,90,255,0)');
+      ctx.fillStyle = g2; ctx.beginPath(); ctx.arc(sx, sy, R, 0, TAU); ctx.fill();
+      if (dt < 0.15) { ctx.fillStyle = `rgba(255,255,255,${0.25 * (1 - dt / 0.15)})`; ctx.fillRect(0, 0, W, H); }
+    }
+  }
+
+  // Earth
+  drawGlobe(ex, ey, rE * S, globeProj);
+  if (u < 0.3) txt('Earth', ex, ey + rE + 16, { align: 'center', size: 13, col: '#9cc8ff', alpha: 1 - u / 0.3 });
+  if (t > TM + 1 && t < Z0 + 0.3) {
+    const a = ease((t - TM - 1) / 0.8) * (1 - ease((t - Z0) / 0.3));
+    txt('not to scale: ~10⁹ years of travel compressed into a few seconds', W / 2, 26,
+      { align: 'center', size: 13, col: '#9aa6bd', alpha: a });
+  }
+}
+
+// ---------------------------------------------------------------- scene 2: arrival at the detectors
+const TAU0 = -60, TAU1 = 30, RATE = 10, S2IN = 1.2;   // window [ms], ms per animation second
+const S2DUR = 12;
+function scene2(tl) {
+  // Traces and wave fade out at the end, leaving globe and detectors for the zoom of scene 3
+  const L = layout2(), fade = ease(tl / S2IN) * (1 - ease((tl - S2DUR + 0.8) / 0.8));
+  // The wave keeps moving past Earth; the traces stop at the end of their window (they are flat by then)
+  const tau = TAU0 + Math.max(0, tl - S2IN) * RATE, tauT = Math.min(tau, TAU1);
+  const hitTl = d => S2IN + (d.t - TAU0) / RATE;
+  drawStars();
+  drawGlobe(L.gx, L.gy, L.R, globeProj);
+
+  // Plane wave
+  ctx.save();
+  ctx.beginPath();
+  if (L.land) ctx.rect(0, 0, L.tx0 - 30, VH); else ctx.rect(0, 0, W, L.rows[0] - L.amp - 34);
+  ctx.clip();
+  waveField(L.gx, L.gy, KC[0], KC[1], s => tau - s / L.R * RC, fade);
+  const sF = tau / RC * L.R, fx = L.gx + KC[0] * sF, fy = L.gy + KC[1] * sF;
+  glowLine(fx, fy, -KC[1], KC[0], 2 * Math.hypot(W, H), '#c8f3ff', 2.5, fade);
+  const lx = fx - KC[1] * 1.25 * L.R, ly = fy + KC[0] * 1.25 * L.R;
+  txt('merger wavefront', lx + 8, ly, { size: 12, col: '#c8f3ff', alpha: fade });
+  ctx.globalAlpha = fade;
+  arrow(lx - KC[0] * 4, ly - KC[1] * 4, lx + KC[0] * 36, ly + KC[1] * 36, '#c8f3ff', 1.5, 7);
+  ctx.restore();
+
+  // Detectors on the globe
+  for (const d of DET) {
+    const p = globeProj(d.r), x = L.gx + p[0] * L.R, y = L.gy - p[1] * L.R, lit = tau >= d.t;
+    detDot(x, y, d.col, lit, lit ? tl - hitTl(d) : -1, 5);
+    txt(d.id, x + 9, y - 9, { size: 13, weight: 700, col: d.col });
+  }
+
+  // Strain traces
+  const px = tt => L.tx0 + (tt - TAU0) / (TAU1 - TAU0) * (L.tx1 - L.tx0);
+  ctx.save(); ctx.globalAlpha = fade;
+  const yAx = L.rows[2] + L.amp + 16;
+  line(L.tx0, yAx, L.tx1, yAx, 'rgba(255,255,255,0.35)');
+  for (let tt = Math.ceil(TAU0 / 10) * 10; tt <= TAU1; tt += 10) {
+    line(px(tt), yAx, px(tt), yAx + 5, 'rgba(255,255,255,0.35)');
+    txt(String(tt), px(tt), yAx + 15, { align: 'center', size: 11, col: '#9aa6bd' });
+  }
+  txt('time [ms], relative to the wave crossing Earth\'s centre', (L.tx0 + L.tx1) / 2, yAx + 32,
+    { align: 'center', size: 12, col: '#9aa6bd' });
+  txt(`slow motion: 1 s of animation ≈ ${RATE} ms`, L.tx1, L.rows[0] - L.amp - 26,
+    { align: 'right', size: 12, col: '#9aa6bd' });
+  DET.forEach((d, i) => {
+    const y0 = L.rows[i];
+    line(L.tx0, y0, L.tx1, y0, 'rgba(255,255,255,0.08)');
+    txt(`${d.name} (${d.id}1)`, L.tx0, y0 - L.amp - 6, { size: 12.5, weight: 600, col: d.col });
+    ctx.save(); ctx.strokeStyle = d.col; ctx.lineWidth = 1.6; ctx.beginPath();
+    for (let tt = TAU0; tt <= tauT; tt += 0.1) {
+      const y = y0 - L.amp * hwave((tt - d.t) / 1000);
+      tt === TAU0 ? ctx.moveTo(px(tt), y) : ctx.lineTo(px(tt), y);
+    }
+    ctx.stroke(); ctx.restore();
+    if (tau >= d.t) {
+      line(px(d.t), y0 - L.amp * 1.1, px(d.t), y0 + L.amp * 1.1, d.col, 1, [3, 3]);
+      rich([['t'], [d.id, 1]], px(d.t) + 4, y0 + L.amp * 0.95, { size: 12, col: d.col });
+    }
+  });
+  line(px(tauT), L.rows[0] - L.amp, px(tauT), L.rows[2] + L.amp,
+    `rgba(200,243,255,${0.5 * (1 - ease((tau - TAU1) / 4))})`);   // cursor fades at the window edge
+  // Delays
+  const ba = ease((tau - dV.t - 3) / 5);
+  if (ba > 0) {
+    ctx.globalAlpha = fade * ba;
+    const br = (P, y) => {
+      arrow(px(P.a.t), y, px(P.b.t), y, '#fff', 1.4, 7, null, true);
+      rich([['Δt'], [P.lab, 1], [` = ${P.dt.toFixed(1)} ms`]], (px(P.a.t) + px(P.b.t)) / 2, y - 10,
+        { align: 'center', size: 12.5 });
+    };
+    br(HL, (L.rows[0] + L.rows[1]) / 2 + 4);
+    br(LV, (L.rows[1] + L.rows[2]) / 2 + 4);
+  }
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------- scene 3: geometry of one pair
+function geo3() { const Lp = Math.min(W * 0.42, VH * 0.72); return { cx: W / 2, cy: VH * 0.56, Lp, ell: Lp * 0.55 }; }
+// Zoom from the scene-2 globe onto the H–L baseline: the camera turns to CAM3 while Earth grows
+// until H and L sit at their sketch positions.
+const T3IN = 2;
+function zoomToSketch(u) {
+  const w = ease(u), L = layout2(), g3 = geo3();
+  const CAMG = { r: E1, u: E2, d: C0 }, cam = rotCam(CAMG, CAM3, w), proj = camProj(cam);
+  const M = mul(add(dH.r, dL.r), 0.5), pmG = camProj(CAMG)(M), pm = proj(M);
+  const k3 = g3.Lp / norm(sub(dH.r, dL.r));
+  const RE = Math.exp(lerp(Math.log(L.R), Math.log(k3), w));
+  const ax = lerp(L.gx + L.R * pmG[0], g3.cx, w), ay = lerp(L.gy - L.R * pmG[1], g3.cy, w);   // baseline midpoint
+  const ex = ax - RE * pm[0], ey = ay + RE * pm[1];                                             // Earth centre
+  drawStars(0, 0, lerp(1, 0.6, w));
+  drawGlobe(ex, ey, RE, proj, 1 - ease((w - 0.3) / 0.5));
+  const det = d => { const p = proj(d.r); return [ex + RE * p[0], ey - RE * p[1]]; };
+  const pH = det(dH), pL = det(dL), pV = det(dV);
+  line(pH[0], pH[1], pL[0], pL[1], `rgba(255,255,255,${0.6 * w})`, 1.5);
+  const ps = proj(SV);
+  ctx.save(); ctx.globalAlpha = ease((w - 0.3) / 0.5);
+  arrow(ax, ay, ax + g3.ell * ps[0], ay - g3.ell * ps[1], '#ffe066', 2.5, 12);
+  ctx.restore();
+  // Detectors go from lit (end of scene 2) to unlit (start of the sketch); V fades out
+  const rr = lerp(5, 7, w);
+  for (const [d, p] of [[dH, pH], [dL, pL]]) {
+    detDot(p[0], p[1], d.col, false, -1, rr);
+    ctx.save(); ctx.globalAlpha = 1 - w; detDot(p[0], p[1], d.col, true, -1, rr); ctx.restore();
+    txt(d.id, p[0] + 9, p[1] - 9, { size: 13, weight: 700, col: d.col, alpha: 1 - w });
+  }
+  const va = 1 - ease(w / 0.6);
+  if (va > 0) {
+    ctx.save(); ctx.globalAlpha = va; detDot(pV[0], pV[1], dV.col, true, -1, 5); ctx.restore();
+    txt('V', pV[0] + 9, pV[1] - 9, { size: 13, weight: 700, col: dV.col, alpha: va });
+  }
+  txt('H', pH[0] - 14, pH[1] + 2, { align: 'right', size: 15, weight: 700, col: dH.col, alpha: w });
+  txt('L', pL[0] + 14, pL[1] + 2, { size: 15, weight: 700, col: dL.col, alpha: w });
+}
+function scene3(tl) {
+  if (tl < T3IN) return zoomToSketch(tl / T3IN);
+  tl -= T3IN;
+  const { cx, cy, Lp, ell } = geo3(), th = HL.th, ct = Math.cos(th), st = Math.sin(th);
+  const k = [ct, st], n = [-st, ct], ppm = Lp / HL.dc, DT = HL.dt;
+  const Hp = [cx - Lp / 2, cy], Lq = [cx + Lp / 2, cy];
+  const tau = clamp(-6 + Math.max(0, tl - 0.6) * 4, -6, DT + 3);
+  const hitH = 0.6 + 6 / 4, hitL = hitH + DT / 4;
+  // Everything except baseline, detectors and source arrow fades out at the end, leaving the start of scene 4
+  const fadeIn = ease(tl / 0.6), fo = 1 - ease((tl - 7.3) / 1.2);
+  const dim = (1 - 0.75 * ease((tl - 4.8) / 1)) * fo;
+  drawStars(0, 0, 0.6);
+
+  waveField(Hp[0], Hp[1], k[0], k[1], s => tau - s / ppm, fadeIn * dim);
+  glowLine(Hp[0] + k[0] * tau * ppm, Hp[1] + k[1] * tau * ppm, n[0], n[1], 2 * Math.hypot(W, H), '#c8f3ff', 2.5, fadeIn * dim);
+
+  // Baseline
+  line(Hp[0], Hp[1], Lq[0], Lq[1], 'rgba(255,255,255,0.6)', 1.5);
+  txt(`d = ${Math.round(HL.km)} km   (d/c = ${HL.dc.toFixed(1)} ms)`, cx, cy + 26,
+    { align: 'center', size: 13, col: '#cfd7e6', alpha: fadeIn * fo });
+
+  // Source direction
+  arrow(cx, cy, cx - ct * ell, cy - st * ell, '#ffe066', 2.5, 12);
+  txt('to source', cx - ct * ell - 8, cy - st * ell - 12, { align: 'right', size: 13, col: '#ffe066', alpha: fadeIn * fo });
+
+  // Wavefront frozen at H, and the extra path to L
+  const F = [Lq[0] - k[0] * Lp * ct, Lq[1] - k[1] * Lp * ct];
+  if (tau >= 0) {
+    ctx.save(); ctx.globalAlpha = fo;
+    line(Hp[0] + n[0] * Lp * 0.2, Hp[1] + n[1] * Lp * 0.2, F[0] - n[0] * Lp * 0.15, F[1] - n[1] * Lp * 0.15,
+      'rgba(255,255,255,0.75)', 1.5, [6, 5]);
+    const q = clamp(tau / DT);
+    ctx.shadowColor = '#ffb454'; ctx.shadowBlur = 8;
+    line(F[0], F[1], F[0] + k[0] * q * Lp * ct, F[1] + k[1] * q * Lp * ct, '#ffb454', 4);
+    ctx.shadowBlur = 0;
+    if (q >= 1) txt('c Δt = d cos θ', (F[0] + Lq[0]) / 2 + 12, (F[1] + Lq[1]) / 2 - 4, { size: 14, col: '#ffb454', weight: 600 });
+    ctx.restore();
+  }
+  if (tl > 0.6 && tl < 5.4) {
+    const s = tau < 0 ? 'wavefront approaching H' : `time since the wavefront passed H: ${Math.min(tau, DT).toFixed(1)} ms`;
+    txt(s, cx, VH * 0.08, { align: 'center', size: 14, col: '#c8f3ff', alpha: 1 - ease((tl - 4.6) / 0.8) });
+  }
+
+  // Triangle annotations and equation
+  const ta = ease((tl - 4.4) / 0.7) * fo;
+  if (ta > 0) {
+    ctx.save(); ctx.globalAlpha = ta;
+    const dx = Hp[0] - F[0], dy = Hp[1] - F[1], l = Math.hypot(dx, dy), uFH = [dx / l, dy / l], sz = 11;
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.2; ctx.beginPath();
+    ctx.moveTo(F[0] + k[0] * sz, F[1] + k[1] * sz);
+    ctx.lineTo(F[0] + (k[0] + uFH[0]) * sz, F[1] + (k[1] + uFH[1]) * sz);
+    ctx.lineTo(F[0] + uFH[0] * sz, F[1] + uFH[1] * sz); ctx.stroke();
+    ctx.strokeStyle = '#ffe066'; ctx.lineWidth = 1.5; ctx.beginPath();
+    ctx.arc(Lq[0], Lq[1], Lp * 0.13, Math.PI, Math.PI + th); ctx.stroke();
+    txt('θ', Lq[0] - Lp * 0.17 * Math.cos(th / 2), Lq[1] - Lp * 0.17 * Math.sin(th / 2),
+      { align: 'center', size: 16, col: '#ffe066', weight: 600 });
+    const bw = Math.min(560, W * 0.8), bx = cx - bw / 2, by = VH * 0.03;
+    ctx.fillStyle = 'rgba(8,12,22,0.85)'; roundBox(bx, by, bw, 66); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,180,84,0.6)'; ctx.stroke();
+    txt('c Δt = d cos θ   ⇒   cos θ = Δt / (d/c)', cx, by + 22, { align: 'center', size: 16, weight: 600 });
+    txt(`cos θ = ${DT.toFixed(1)} ms / ${HL.dc.toFixed(1)} ms   ⇒   θ ≈ ${(th / D2R).toFixed(0)}°`,
+      cx, by + 46, { align: 'center', size: 15, col: '#cfd7e6' });
+    ctx.restore();
+  }
+
+  detDot(Hp[0], Hp[1], dH.col, tau >= 0, tau >= 0 ? tl - hitH : -1, 7);
+  detDot(Lq[0], Lq[1], dL.col, tau >= DT, tau >= DT ? tl - hitL : -1, 7);
+  txt('H', Hp[0] - 14, Hp[1] + 2, { align: 'right', size: 15, weight: 700, col: dH.col });
+  txt('L', Lq[0] + 14, Lq[1] + 2, { size: 15, weight: 700, col: dL.col });
+}
+
+// ---------------------------------------------------------------- scene 4: zoom out to the sky, then one delay -> a cone
+// The sketch of scene 3 is the true geometry seen by CAM3, so we turn the camera to the sky-sphere
+// view of scene 5 while zooming out until Earth is small, with the arrow attached to the baseline
+// midpoint. The source is at infinity, so only directions matter: we shift the arrow parallel to
+// Earth's centre and then sweep out the cone around the H–L baseline; its base circle is the H–L
+// ring on the sky sphere.
+function scene4(tl) {
+  const g3 = geo3(), sg = sphereGeo(), RE5 = sg.Rs * 0.12;
+  const w = ease(tl / 3.2), sh = ease((tl - 3.3) / 0.7);
+  const phiNow = TAU * ease((tl - 4.3) / 2.8);
+  const cam = rotCam(CAM3, cam5(0), w), proj = camProj(cam);
+  // The baseline midpoint moves from the sketch centre to where it sits on the final small Earth
+  const k3 = g3.Lp / norm(sub(dH.r, dL.r));
+  const M = mul(add(dH.r, dL.r), 0.5), pm = proj(M), pm1 = camProj(cam5(0))(M);
+  const RE = Math.exp(lerp(Math.log(k3), Math.log(RE5), w));
+  const mx = lerp(g3.cx, sg.cx + RE5 * pm1[0], w), my = lerp(g3.cy, sg.cy - RE5 * pm1[1], w);
+  const ex = mx - RE * pm[0], ey = my + RE * pm[1];   // Earth centre
+  const ax = lerp(mx, ex, sh), ay = lerp(my, ey, sh);  // arrow origin: baseline midpoint, then parallel shift
+  const ell = lerp(g3.ell, sg.Rs, w);
+  const S = v => { const p = proj(v); return [ax + ell * p[0], ay - ell * p[1], p[2]]; };
+  const Ssky = v => { const p = proj(v); return [ex + ell * p[0], ey - ell * p[1], p[2]]; };
+  const gone = 1 - w, ga = ease((w - 0.3) / 0.45);
+  const fill = ease((tl - 7.1) / 0.5) * (1 - ease((tl - 8.8) / 0.6));
+  const srcA = 1 - ease((tl - 8.8) / 0.6), axA = ease((tl - 1.5) / 1.5);
+  const trail = [];
+  for (let i = 0; i <= 240; i++) trail.push(ringPt(HL, HL.cth, i / 240 * phiNow));
+  drawStars(0, 0, 0.6);
+
+  // Back side
+  if (w > 0) { skyBackdrop(ex, ey, ell, w); skyGrid(Ssky, false, w); }
+  baselineAxis(S, ax, ay, HL, false, axA);
+  generators(S, ax, ay, phiNow, false, 1);
+  strokeSide(trail, S, false, HL.col, 1.5, [4, 4]);
+  // Earth (only once it has shrunk enough to fit on screen)
+  if (ga > 0) drawGlobe(ex, ey, RE, proj, ga);
+  // Front side
+  if (w > 0) skyGrid(Ssky, true, w);
+  if (fill > 0) {
+    ctx.save(); ctx.globalAlpha = 0.16 * fill; ctx.fillStyle = HL.col;
+    for (let i = 0; i < 90; i++) {
+      const a = S(ringPt(HL, HL.cth, i / 90 * TAU)), b = S(ringPt(HL, HL.cth, (i + 1) / 90 * TAU));
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+  }
+  baselineAxis(S, ax, ay, HL, true, axA);
+  const det = d => { const p = proj(d.r); return [ex + RE * p[0], ey - RE * p[1], p[2]]; };
+  const pH = det(dH), pL = det(dL);
+  line(pH[0], pH[1], pL[0], pL[1], `rgba(255,255,255,${0.6 * gone})`, 1.5);
+  generators(S, ax, ay, phiNow, true, 1);
+  strokeSide(trail, S, true, HL.col, 2.2);
+
+  // Source direction (with a fading copy left at the baseline midpoint during the shift) and the sweeping direction
+  const p0 = S(SV), ghost = 0.45 * ease(sh * 4) * (1 - ease((tl - 4.1) / 0.8));
+  ctx.save();
+  if (ghost > 0) {
+    const ps = proj(SV);
+    ctx.globalAlpha = ghost;
+    arrow(mx, my, mx + ell * ps[0], my - ell * ps[1], '#ffe066', 2, 11, [6, 5]);
+  }
+  ctx.globalAlpha = srcA;
+  arrow(ax, ay, p0[0], p0[1], '#ffe066', 2.5, 12);
+  ctx.restore();
+  if (tl > 4.3 && tl < 7.2) {
+    const pc = S(ringPt(HL, HL.cth, phiNow));
+    arrow(ax, ay, pc[0], pc[1], '#ffffff', 2.5, 12);
+    rich([['same Δt'], ['HL', 1]], pc[0] + 10, pc[1] - 10, { size: 13 });
+  }
+
+  // Detectors: H and L shrink onto the globe, V appears with it
+  const rr = lerp(7, 3, w);
+  for (const [d, p] of [[dH, pH], [dL, pL], [dV, det(dV)]]) {
+    const a = d === dV ? ga * (p[2] > 0) : (p[2] > 0 ? 1 : 1 - ga);
+    if (a <= 0) continue;
+    ctx.save(); ctx.globalAlpha = a; detDot(p[0], p[1], d.col, true, -1, rr); ctx.restore();
+  }
+  txt('H', pH[0] - 14, pH[1] + 2, { align: 'right', size: 15, weight: 700, col: dH.col, alpha: gone });
+  txt('L', pL[0] + 14, pL[1] + 2, { size: 15, weight: 700, col: dL.col, alpha: gone });
+  // Label the axis at its front end
+  const e1 = S(mul(HL.ax, 1.12)), e2 = S(mul(HL.ax, -1.12)), eF = e1[2] > e2[2] ? e1 : e2;
+  txt('H–L baseline', eF[0] + 8, eF[1] - 10, { size: 13, col: HL.col, alpha: axA * (1 - ease((tl - 8.6) / 0.8)) });
+}
+
+// ---------------------------------------------------------------- scene 5: rings on the sky
+const S5DUR = 13;   // ~1.5 s hold after the patch is complete
+function scene5(tl) {
+  const { cx, cy, Rs } = sphereGeo();
+  const proj = camProj(cam5(tl));
+  const S = v => { const p = proj(v); return [cx + p[0] * Rs, cy - p[1] * Rs, p[2], Rs, 0]; };
+  drawStars(0, 0, 0.6);
+  skyBackdrop(cx, cy, Rs, 1);
+  const bw = ease((tl - 8) / 2);
+  drawSky(S, { cx, cy, tl, prog: [1, ease((tl - 0.5) / 2.5), ease((tl - 3.2) / 2)], bw,
+    coneA: 1 - ease(tl / 1.5), mk: ease((tl - 5.4) / 0.8), pa: ease((tl - 10) / 1.5),
+    axA: 1, bandA: 1, ringA: 1, labA: 1, earth: { x: cx, y: cy, R: Rs * 0.12, proj, alpha: 1 } });
+  sigmaLabel(bw);
+}
+
+// ---------------------------------------------------------------- scene 6: from the inside, to a sky map
+// We orbit to the side opposite the source and fly straight in (perspective camera) through the sky
+// sphere and Earth, ending at Earth's centre looking out at the source: the view a sky map shows,
+// with east to the left. The inside view (gnomonic, then stereographic) is then morphed into a
+// Mollweide map in RA/Dec. We ignore Earth's rotation, i.e. take Earth-fixed longitude as RA
+// (Greenwich sidereal time 0 at the event).
+const CAMB = (() => {   // at Earth's centre: looking at MID with north up; from outside: MID on the far side
+  const u = unit(sub([0, 0, 1], mul(MID, MID[2]))), d = mul(MID, -1);
+  return { r: cross(u, d), u, d };
+})();
+const RAC = 30 * Math.round(Math.atan2(MID[1], MID[0]) / D2R / 30);   // map centre RA [deg]
+const S6 = { O1: 2.5, F1: 6.5, G1: 7.4, P1: 8.6, M1: 11.6, H1: 13.4, Z0: 15, Z1: 17, DUR: 21 };
+const SQ2 = Math.SQRT2;
+// Mollweide coordinates (x in [-2√2, 2√2], RA increasing to the left, centred on RAC) and λ
+function mollNorm(v) {
+  const dec = Math.asin(clamp(v[2], -1, 1));
+  let lam = Math.atan2(v[1], v[0]) - RAC * D2R; lam -= TAU * Math.round(lam / TAU);
+  let th = dec;
+  for (let i = 0; i < 10; i++) {
+    const df = 2 + 2 * Math.cos(2 * th); if (df < 1e-6) break;
+    th -= (2 * th + Math.sin(2 * th) - Math.PI * Math.sin(dec)) / df;
+  }
+  return [-2 * SQ2 / Math.PI * lam * Math.cos(th), SQ2 * Math.sin(th), lam];
+}
+function mapGeo(zf) {   // zf: zoom onto the source/mirror region (0: full sky, 1: zoomed in 1.7x)
+  const Mw = Math.min(W * 0.45, VH * 0.9), s = Mw / (2 * SQ2) * (1 + 0.7 * zf), c = mollNorm(MID);
+  const ox = zf * c[0], oy = zf * c[1], cx = W / 2, cy = VH * 0.5;
+  return { s, toScr: (x, y) => [cx + s * (x - ox), cy - s * (y - oy)] };
+}
+// Colour map (inferno-like)
+const CMAP = [[0, [0, 0, 4]], [0.2, [50, 10, 94]], [0.4, [120, 28, 109]], [0.6, [188, 55, 84]],
+  [0.8, [237, 105, 37]], [0.92, [251, 180, 26]], [1, [252, 255, 164]]];
+function cmap(v) {
+  for (let i = 1; i < CMAP.length; i++) if (v <= CMAP[i][0]) {
+    const [v0, a] = CMAP[i - 1], [v1, b] = CMAP[i], u = (v - v0) / (v1 - v0);
+    return a.map((x, k) => x + (b[k] - x) * u);
+  }
+  return CMAP[CMAP.length - 1][1];
+}
+// Timing-only posterior on a Mollweide grid (equal-area pixels, uniform prior). Per-detector timing
+// error σ_d = SIG/√2 (so a pair has SIG); marginalizing the common arrival time gives
+// χ² = Σ_pairs (Δt_model - Δt_obs)² / (3 σ_d²). Computed on first use.
+let HEAT = null;
+function heat() {
+  if (HEAT) return HEAT;
+  const NX = 720, NY = 360, X0 = 2 * SQ2, Y0 = SQ2, P = new Float64Array(NX * NY);
+  const inside = [];
+  for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
+    const x = -X0 + (i + 0.5) * 2 * X0 / NX, y = Y0 - (j + 0.5) * 2 * Y0 / NY;
+    if ((x / X0) ** 2 + (y / Y0) ** 2 > 1) continue;
+    const th = Math.asin(y / SQ2), dec = Math.asin(clamp((2 * th + Math.sin(2 * th)) / Math.PI, -1, 1));
+    const ra = RAC * D2R - Math.PI * x / (2 * SQ2 * Math.cos(th));
+    const v = [Math.cos(dec) * Math.cos(ra), Math.cos(dec) * Math.sin(ra), Math.sin(dec)];
+    let chi2 = 0;
+    for (const Pp of PAIRS) { const r = dot(v, Pp.ax) * Pp.dc - Pp.dt; chi2 += r * r; }
+    P[j * NX + i] = Math.exp(-chi2 / (1.5 * SIG * SIG) / 2);
+    inside.push(P[j * NX + i]);
+  }
+  // Credible levels from the sorted pixel values
+  inside.sort((a, b) => b - a);
+  const total = inside.reduce((a, b) => a + b, 0), pmax = inside[0], lev = {}, area = {};
+  let cum = 0;
+  for (let k = 0; k < inside.length; k++) {
+    cum += inside[k];
+    for (const q of [0.5, 0.9]) if (lev[q] === undefined && cum >= q * total) { lev[q] = inside[k]; area[q] = (k + 1) * 41252.96 / inside.length; }
+  }
+  // Image
+  const img = document.createElement('canvas'); img.width = NX; img.height = NY;
+  const ictx = img.getContext('2d'), id = ictx.createImageData(NX, NY);
+  for (let k = 0; k < NX * NY; k++) {
+    const v = P[k] / pmax, [r, g, b] = cmap(v);
+    id.data[4 * k] = r; id.data[4 * k + 1] = g; id.data[4 * k + 2] = b;
+    id.data[4 * k + 3] = 255 * clamp(Math.sqrt(v) * 1.3);
+  }
+  ictx.putImageData(id, 0, 0);
+  // Contours (marching squares), in Mollweide coordinates
+  const toN = (gi, gj) => [-X0 + (gi + 0.5) * 2 * X0 / NX, Y0 - (gj + 0.5) * 2 * Y0 / NY];
+  const contour = L => {
+    const segs = [];
+    for (let j = 0; j < NY - 1; j++) for (let i = 0; i < NX - 1; i++) {
+      const a = P[j * NX + i], b = P[j * NX + i + 1], c = P[(j + 1) * NX + i + 1], d = P[(j + 1) * NX + i];
+      const idx = (a > L) << 3 | (b > L) << 2 | (c > L) << 1 | (d > L);
+      if (idx === 0 || idx === 15) continue;
+      const T = () => toN(i + (L - a) / (b - a), j), R = () => toN(i + 1, j + (L - b) / (c - b));
+      const B = () => toN(i + (L - d) / (c - d), j + 1), Lf = () => toN(i, j + (L - a) / (d - a));
+      const cases = { 1: [[Lf, B]], 2: [[B, R]], 3: [[Lf, R]], 4: [[T, R]], 5: [[T, R], [Lf, B]], 6: [[T, B]], 7: [[T, Lf]],
+        8: [[T, Lf]], 9: [[T, B]], 10: [[T, Lf], [B, R]], 11: [[T, R]], 12: [[Lf, R]], 13: [[B, R]], 14: [[Lf, B]] };
+      for (const [f, g] of cases[idx]) segs.push([...f(), ...g()]);
+    }
+    return segs;
+  };
+  HEAT = { img, X0, Y0, area, c50: contour(lev[0.5]), c90: contour(lev[0.9]) };
+  return HEAT;
+}
+setTimeout(heat, 300);   // ~0.1 s of work; do it up front rather than as a hitch during scene 6
+function fullSky(alpha) { if (alpha > 0) { ctx.fillStyle = `rgba(30,45,85,${0.2 * alpha})`; ctx.fillRect(0, 0, W, H); } }
+
+function scene6(tl) {
+  const { cx, cy, Rs } = sphereGeo(), fin = 0.45 * VH;
+  const base = { cx, cy, tl: S5DUR + tl, prog: [1, 1, 1], bw: 1, coneA: 0, mk: 1, pa: 1,
+    axA: 0, bandA: 1, ringA: 1, labA: 0, earth: null };
+  drawStars(0, 0, 0.6);
+
+  // Orbit to the far side (orthographic, as in scene 5)
+  if (tl < S6.O1) {
+    const e = ease(tl / S6.O1), proj = camProj(rotCam(cam5(S5DUR), CAMB, e));
+    const S = v => { const p = proj(v); return [cx + p[0] * Rs, cy - p[1] * Rs, p[2], Rs, 0]; };
+    skyBackdrop(cx, cy, Rs, 1);
+    drawSky(S, { ...base, axA: 1 - e, labA: 1 - e, earth: { x: cx, y: cy, R: Rs * 0.12, proj, alpha: 1 } });
+    sigmaLabel(1 - e);
+    return;
+  }
+
+  // Fly in: perspective camera at distance D from the centre, looking at the centre (and at MID behind it)
+  if (tl < S6.F1) {
+    const e = ease((tl - S6.O1) / (S6.F1 - S6.O1)), D = Math.pow(60, 1 - e) - 1, f = Math.max(Rs * D, fin), c = CAMB;
+    const bias = 2 * ease((1.6 - D) / 0.6);   // everything counts as front once we are inside
+    const S = v => {
+      const xd = dot(v, c.d), z = D - xd;
+      if (z < 0.02) return [NaN, NaN, NaN, 0, 0];
+      return [cx + f * dot(v, c.r) / z, cy - f * dot(v, c.u) / z, D > 1 ? D * xd - 1 + bias : 1, f / z, 0];
+    };
+    const rS = D > 1 ? f / Math.sqrt(D * D - 1) : Infinity;   // silhouette of the sky sphere
+    if (rS < Math.hypot(W, H)) skyBackdrop(cx, cy, rS, 1); else fullSky(1);
+    const ea = ease((D - 0.3) / 0.4);
+    const earth = ea > 0 ? { x: cx, y: cy, R: f * 0.12 / Math.sqrt(Math.max(D * D - 0.0144, 1e-4)), proj: camProj(c), alpha: ea } : null;
+    drawSky(S, { ...base, earth });
+    return;
+  }
+
+  // Inside view (gnomonic -> stereographic), then unwrapped into a Mollweide map; finally the sky map
+  const p = ease((tl - S6.G1) / (S6.P1 - S6.G1)), m = ease((tl - S6.P1) / (S6.M1 - S6.P1));
+  const hA = ease((tl - S6.M1 - 0.2) / 1.5), cA = ease((tl - S6.H1) / 1), zf = ease((tl - S6.Z0) / (S6.Z1 - S6.Z0));
+  const mg = mapGeo(zf), c = CAMB;
+  const S = v => {
+    const B = mollNorm(v), [bx, by] = mg.toScr(B[0], B[1]);
+    const seam = m > 0 && Math.abs(B[2]) > 150 * D2R ? Math.sign(B[2]) : 0;
+    const den = p - dot(v, c.d);   // p + cos(angle from MID)
+    if (den < 0.03) return m > 0.5 ? [bx, by, 1, 0.9 * mg.s, seam] : [NaN, NaN, NaN, 0, 0];
+    const k = (p + 1) / den;
+    return [lerp(cx + fin * k * dot(v, c.r), bx, m), lerp(cy - fin * k * dot(v, c.u), by, m), 1, lerp(fin * k, 0.9 * mg.s, m), seam];
+  };
+  fullSky(1 - m);
+  const [ox, oy] = mg.toScr(0, 0), rx = 2 * SQ2 * mg.s, ry = SQ2 * mg.s;
+  if (m > 0) {   // map background
+    ctx.save(); ctx.globalAlpha = 0.9 * m; ctx.fillStyle = '#05050f';
+    ctx.beginPath(); ctx.ellipse(ox, oy, rx, ry, 0, 0, TAU); ctx.fill(); ctx.restore();
+  }
+  const Hm = hA > 0 || cA > 0 ? heat() : null;
+  if (hA > 0) {
+    const [x0, y0] = mg.toScr(-Hm.X0, Hm.Y0);
+    ctx.save(); ctx.globalAlpha = hA; ctx.imageSmoothingEnabled = true;
+    ctx.beginPath(); ctx.ellipse(ox, oy, rx, ry, 0, 0, TAU); ctx.clip();
+    ctx.drawImage(Hm.img, x0, y0, 2 * rx, 2 * ry); ctx.restore();
+  }
+  drawSky(S, { ...base, bandA: 1 - hA, pa: 1 - hA, ringA: 1 - 0.8 * hA, gridA: 1 });
+  if (cA > 0) {   // credible contours
+    for (const [segs, dash] of [[Hm.c90, null], [Hm.c50, [4, 3]]]) {
+      ctx.save(); ctx.globalAlpha = cA; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.3; if (dash) ctx.setLineDash(dash);
+      ctx.beginPath();
+      for (const [x1, y1, x2, y2] of segs) { const a = mg.toScr(x1, y1), b = mg.toScr(x2, y2); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); }
+      ctx.stroke(); ctx.restore();
+    }
+  }
+  if (m > 0) {   // map outline and RA/Dec labels
+    ctx.save(); ctx.globalAlpha = m; ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.ellipse(ox, oy, rx, ry, 0, 0, TAU); ctx.stroke(); ctx.restore();
+    const la = ease((m - 0.6) / 0.4) * (1 - zf);
+    for (let ra = RAC - 150; ra <= RAC + 150; ra += 30) {
+      const q = mollNorm(llv(0, ra)), [x, y] = mg.toScr(q[0], q[1]);
+      txt(`${((ra % 360) + 360) % 360 / 15}h`, x, y + 11, { align: 'center', size: 11, col: '#cfd7e6', alpha: la });
+    }
+    for (const dec of [-60, -30, 30, 60]) {
+      const q = mollNorm(llv(dec, RAC + 179.9)), [x, y] = mg.toScr(q[0], q[1]);
+      txt(`${dec > 0 ? '+' : ''}${dec}°`, x - 6, y, { align: 'right', size: 11, col: '#cfd7e6', alpha: la });
+    }
+    // Axis labels: RA below the map, Dec at its left edge
+    txt('RA', ox, oy + ry + 16, { align: 'center', size: 12, weight: 600, col: '#cfd7e6', alpha: la });
+    ctx.save(); ctx.translate(ox - rx - 14, oy); ctx.rotate(-Math.PI / 2);
+    txt('Dec', 0, 0, { align: 'center', size: 12, weight: 600, col: '#cfd7e6', alpha: la }); ctx.restore();
+  }
+  // Annotations
+  const insideA = ease((tl - S6.F1) / 0.5) * (1 - ease((tl - S6.P1) / 0.6));
+  txt('looking out from Earth\'s centre: east is now on the left, as on sky maps', W / 2, 26,
+    { align: 'center', size: 14, col: '#cfd7e6', alpha: insideA });
+  if (cA > 0) {
+    ctx.save(); ctx.globalAlpha = cA;
+    const w = txt('Timing-only sky map', 20, 24, { size: 14, weight: 600 });
+    txt('   90% (solid) / 50% (dashed) credible regions', 20 + w, 24, { size: 12.5, col: '#cfd7e6' });
+    ctx.restore();
+  }
+}
+
+// ---------------------------------------------------------------- scenes and controls
+const SCENES = [
+  { name: 'Merger', dur: 12, draw: scene1 },
+  { name: 'Arrival', dur: S2DUR, draw: scene2 },
+  { name: 'Geometry', dur: T3IN + 8.5, draw: scene3 },
+  { name: 'Cone', dur: 9.6, draw: scene4 },
+  { name: 'Sky rings', dur: S5DUR, draw: scene5 },
+  { name: 'Sky map', dur: S6.DUR, draw: scene6 },
+];
+let acc = 0; SCENES.forEach(s => { s.start = acc; acc += s.dur; });
+const TOTAL = acc;
+
+const scrub = document.getElementById('scrub'),
+  playBtn = document.getElementById('play'), timeEl = document.getElementById('time'), chapEl = document.getElementById('chapters');
+scrub.max = TOTAL;
+SCENES.forEach((s, i) => {
+  const b = document.createElement('button'); b.textContent = `${i + 1} ${s.name}`;
+  b.onclick = () => { T = s.start; }; chapEl.appendChild(b); s.btn = b;
+});
+// Chapter buttons if they fit on one line, otherwise a drop-down menu
+const chapSel = document.getElementById('chapsel');
+SCENES.forEach((s, i) => chapSel.add(new Option(`${i + 1} ${s.name}`, i)));
+chapSel.onchange = () => { T = SCENES[+chapSel.value].start; chapSel.blur(); };
+function fitChapters() {
+  chapEl.style.display = ''; chapSel.style.display = 'none';
+  if (chapEl.offsetHeight > 1.5 * chapEl.firstChild.offsetHeight) { chapEl.style.display = 'none'; chapSel.style.display = ''; }
+}
+addEventListener('resize', fitChapters); fitChapters();
+let T = 0, playing = true, speed = 1, last = null;
+const setPlay = p => { playing = p; playBtn.textContent = p ? 'Pause' : 'Play'; };
+playBtn.onclick = () => { if (!playing && T >= TOTAL) T = 0; setPlay(!playing); };
+document.getElementById('restart').onclick = () => { T = 0; setPlay(true); };
+document.getElementById('speed').onchange = e => { speed = +e.target.value; };
+scrub.oninput = () => { T = +scrub.value; };
+addEventListener('keydown', e => {
+  if (recording) return;
+  if (e.code === 'Space') { e.preventDefault(); playBtn.onclick(); }
+  if (e.code === 'ArrowRight') T = Math.min(TOTAL, T + 3);
+  if (e.code === 'ArrowLeft') T = Math.max(0, T - 3);
+});
+window.seek = t => { T = t; setPlay(false); render(); };   // for debugging
+
+// Records the canvas in real time from the start, so the selected speed carries over into the video.
+// The video downloads once the animation ends; stopping early discards it.
+const recBtn = document.getElementById('rec');
+let recDone = null;
+async function record() {
+  const mime = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm']
+    .find(m => MediaRecorder.isTypeSupported(m));
+  recording = true; cv.classList.add('rec'); resize();
+  recBtn.textContent = 'Stop recording'; recBtn.classList.add('recording');
+  // No seeking or pausing while recording; the speed can still be changed
+  for (const el of [playBtn, document.getElementById('restart'), scrub, ...chapEl.children, chapSel]) el.disabled = true;
+  T = 0; setPlay(true); render();
+  const rec = new MediaRecorder(cv.captureStream(60), { mimeType: mime, videoBitsPerSecond: 8e6 });
+  const chunks = [], stopped = new Promise(r => rec.onstop = r);
+  rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+  rec.start();
+  const finished = await new Promise(r => recDone = r);
+  recDone = null;
+  rec.stop(); await stopped;
+  recording = false; cv.classList.remove('rec'); resize();
+  recBtn.textContent = 'Record'; recBtn.classList.remove('recording');
+  for (const el of [playBtn, document.getElementById('restart'), scrub, ...chapEl.children, chapSel]) el.disabled = false;
+  if (!finished) return;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(chunks, { type: mime }));
+  a.download = 'gw_timing_localization.' + (mime.startsWith('video/mp4') ? 'mp4' : 'webm');
+  a.click();
+}
+recBtn.onclick = () => recDone ? recDone(false) : record();
+
+function render() {
+  ctx.fillStyle = '#04060c'; ctx.fillRect(0, 0, W, H);
+  let i = SCENES.findIndex(s => T < s.start + s.dur); if (i < 0) i = SCENES.length - 1;
+  const s = SCENES[i], tl = T - s.start;
+  ctx.save(); s.draw(tl); ctx.restore();
+  SCENES.forEach((x, j) => x.btn.classList.toggle('on', j === i));
+  if (document.activeElement !== chapSel && chapSel.value !== String(i)) chapSel.value = i;
+  scrub.value = T;
+  timeEl.textContent = `${T.toFixed(1)} / ${TOTAL} s`;
+}
+function frame(ts) {
+  if (last === null) last = ts;
+  const dt = Math.min(0.05, (ts - last) / 1000); last = ts;
+  if (playing) {
+    T += dt * speed;
+    if (T >= TOTAL) {
+      T = TOTAL; setPlay(false);
+      if (recDone) { const done = recDone; setTimeout(() => done(true), 1000); }   // hold the last frame for 1 s
+    }
+  }
+  render();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

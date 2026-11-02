@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>How a GW detector turns strain into power, and why we need calibration</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #04060c; color: #e8ecf4;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
+  canvas { display: block; position: fixed; inset: 0; width: 100vw; height: 100vh; }
+  /* While recording, the canvas has a fixed 16:9 size; letterbox it above the controls */
+  canvas.rec { inset: auto; left: 50%; top: calc(50% - 26px); transform: translate(-50%, -50%);
+    width: min(100vw, calc((100vh - 52px) * 16 / 9)); height: auto; aspect-ratio: 16 / 9; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  button.recording { border-color: #ff6b81; color: #ff6b81; }
+  #controls { position: fixed; left: 0; right: 0; bottom: 0; display: flex; gap: 8px;
+    align-items: center; padding: 10px 18px; background: rgba(0, 0, 0, 0.55); font-size: 13px; }
+  button, select { background: #1a2233; color: #e8ecf4; border: 1px solid #33405a; border-radius: 6px;
+    padding: 4px 10px; font: inherit; cursor: pointer; }
+  button.on { border-color: #5ad1ff; color: #5ad1ff; }
+  input[type=range] { flex: 1; min-width: 80px; accent-color: #5ad1ff; }
+  #chapters button { white-space: nowrap; }
+  #time { font-variant-numeric: tabular-nums; min-width: 84px; text-align: right; color: #9aa6bd; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="controls">
+  <button id="play">Pause</button>
+  <button id="restart">Restart</button>
+  <button id="rec" title="Plays the animation from the start at the selected speed and records it to a video file that downloads when it ends. Stopping early discards it.">Record</button>
+  <button id="caps" class="on" title="Show or hide the explanatory captions">Captions</button>
+  <span id="chapters"></span>
+  <select id="chapsel" title="Jump to a scene" style="display: none"></select>
+  <input id="scrub" type="range" min="0" max="1" step="0.01" value="0">
+  <span id="time"></span>
+  <select id="speed">
+    <option value="0.5">0.5×</option><option value="1" selected>1×</option>
+    <option value="1.5">1.5×</option><option value="2">2×</option>
+  </select>
+</div>
+<script>
+"use strict";
+// ---------------------------------------------------------------- helpers
+const D2R = Math.PI / 180, TAU = 2 * Math.PI;
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const ease = x => { x = clamp(x); return x * x * (3 - 2 * x); };
+const lerp = (a, b, u) => a + (b - a) * u;
+const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const mul = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm = a => Math.hypot(a[0], a[1], a[2]);
+const unit = a => mul(a, 1 / norm(a));
+const llv = (lat, lon) => {   // degrees -> unit vector (Earth-fixed)
+  lat *= D2R; lon *= D2R;
+  return [Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat)];
+};
+function rng(seed) { return () => (seed = (seed * 16807) % 2147483647) / 2147483647; }
+
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+let W, H, VH, U, recording = false;
+function resize() {
+  // Recording uses a fixed 1280x720 layout rendered at 1.5x, i.e. a 1920x1080 video, regardless of the window
+  const s = recording ? 1.5 : window.devicePixelRatio || 1;
+  if (recording) { W = 1280; H = 720; VH = H - 20; }
+  else { W = Math.max(innerWidth, 320); H = Math.max(innerHeight, 400); VH = H - 60; }
+  U = Math.min(W, VH);
+  cv.width = Math.round(W * s); cv.height = Math.round(H * s); ctx.setTransform(s, 0, 0, s, 0, 0);
+}
+addEventListener('resize', resize); resize();
+
+const FONT = 'system-ui,-apple-system,"Segoe UI",sans-serif';
+function txt(s, x, y, o = {}) {
+  ctx.save();
+  ctx.globalAlpha *= (o.alpha ?? 1);
+  ctx.fillStyle = o.col || '#e8ecf4';
+  ctx.font = `${o.weight || 400} ${o.size || 14}px ${FONT}`;
+  ctx.textAlign = o.align || 'left'; ctx.textBaseline = o.base || 'middle';
+  ctx.fillText(s, x, y);
+  const w = ctx.measureText(s).width;
+  ctx.restore();
+  return w;
+}
+// Text with subscripts, e.g. rich([['Δt'], ['HL', 1], [' = 6.5 ms']], ...)
+function rich(parts, x, y, o = {}) {
+  const size = o.size || 14;
+  ctx.save();
+  let total = 0;
+  for (const [s, isSub] of parts) {
+    ctx.font = `${o.weight || 400} ${isSub ? size * 0.72 : size}px ${FONT}`;
+    total += ctx.measureText(s).width;
+  }
+  ctx.restore();
+  let cx = o.align === 'center' ? x - total / 2 : o.align === 'right' ? x - total : x;
+  for (const [s, isSub] of parts) {
+    cx += txt(s, cx, y + (isSub ? size * 0.28 : 0), { ...o, align: 'left', size: isSub ? size * 0.72 : size });
+  }
+  return total;
+}
+// Same, with "_{...}" markup for subscripts, e.g. mtxt('d_{err}', ...)
+function parseMk(s) {
+  const out = [], re = /_\{([^}]*)\}/g;
+  let i = 0, m;
+  while ((m = re.exec(s))) { if (m.index > i) out.push([s.slice(i, m.index)]); out.push([m[1], 1]); i = re.lastIndex; }
+  if (i < s.length) out.push([s.slice(i)]);
+  return out;
+}
+const mtxt = (s, x, y, o = {}) => rich(parseMk(s), x, y, o);
+function mkWidth(s, size, weight = 400) {
+  ctx.save();
+  let w = 0;
+  for (const [p, isSub] of parseMk(s)) { ctx.font = `${weight} ${isSub ? size * 0.72 : size}px ${FONT}`; w += ctx.measureText(p).width; }
+  ctx.restore();
+  return w;
+}
+function arrow(x0, y0, x1, y1, col, w = 2, hs = 10, dash = null, both = false) {
+  ctx.save();
+  ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = w;
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+  ctx.setLineDash([]);
+  const head = (xa, ya, xb, yb) => {
+    const a = Math.atan2(yb - ya, xb - xa);
+    ctx.beginPath(); ctx.moveTo(xb, yb);
+    ctx.lineTo(xb - hs * Math.cos(a - 0.4), yb - hs * Math.sin(a - 0.4));
+    ctx.lineTo(xb - hs * Math.cos(a + 0.4), yb - hs * Math.sin(a + 0.4));
+    ctx.closePath(); ctx.fill();
+  };
+  head(x0, y0, x1, y1);
+  if (both) head(x1, y1, x0, y0);
+  ctx.restore();
+}
+function line(x0, y0, x1, y1, col, w = 1, dash = null) {
+  ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = w;
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); ctx.restore();
+}
+function detDot(x, y, col, lit, age, r = 6) {
+  ctx.save();
+  const a0 = ctx.globalAlpha;
+  if (lit) {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r * 4);
+    g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.globalAlpha = 0.7 * a0;
+    ctx.beginPath(); ctx.arc(x, y, r * 4, 0, TAU); ctx.fill();
+    ctx.globalAlpha = a0;
+  }
+  ctx.fillStyle = lit ? col : '#1b2333'; ctx.strokeStyle = col; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); ctx.stroke();
+  ctx.restore();
+}
+function roundBox(x, y, w, h, r = 8) {
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+const COL = { X: '#ffb454', Y: '#b48cff', gw: '#5ad1ff', P: '#ff7a7a', cal: '#ffe066', mute: '#9aa6bd', soft: '#cfd7e6' };
+
+// ---------------------------------------------------------------- stars
+const STARS = (() => { const r = rng(7), s = [];
+  for (let i = 0; i < 420; i++) s.push([r(), r(), 0.2 + 0.8 * r() ** 3, r()]);
+  return s; })();
+function drawStars(ox = 0, oy = 0, alpha = 1) {
+  ctx.save();
+  for (const [x, y, b] of STARS) {
+    const px = ((x * W + ox) % W + W) % W, py = ((y * H + oy) % H + H) % H;
+    ctx.globalAlpha = alpha * b; ctx.fillStyle = '#dfe8ff';
+    ctx.fillRect(px, py, b > 0.7 ? 1.8 : 1.1, b > 0.7 ? 1.8 : 1.1);
+  }
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------- layout
+// Caption band at the top, the detector on the left and a panel on the right
+function lay() {
+  const R = (x, y, w, h) => ({ x: x * W, y: y * VH, w: w * W, h: h * VH });
+  if (W > VH * 1.2) return { land: true, cap: 0.075 * VH, capW: 0.86 * W,
+    ifoA: R(0.02, 0.16, 0.46, 0.82), panel: R(0.54, 0.17, 0.42, 0.78) };
+  return { land: false, cap: 0.06 * VH, capW: 0.92 * W,
+    ifoA: R(0.03, 0.12, 0.94, 0.46), panel: R(0.08, 0.6, 0.86, 0.38) };
+}
+// Detector fitted into a rectangle; La is the arm length on screen, (bx, by) the beam splitter
+function ifoGeo(r) {
+  const La = Math.min(r.w / 1.5, r.h / 1.55);
+  return { La, bx: r.x + (r.w - 1.5 * La) / 2 + 0.42 * La, by: r.y + (r.h - 1.55 * La) / 2 + 1.1 * La };
+}
+
+let capsOn = true;
+function caption(tl, list) {
+  if (!capsOn) return;
+  const L = lay(), size = L.land ? 17 : 14.5;
+  for (const [t0, t1, s] of list) {
+    const a = ease((tl - t0) / 0.5) * (1 - ease((tl - t1 + 0.5) / 0.5));
+    if (a <= 0) continue;
+    const lines = [];
+    let cur = '';
+    for (const wd of s.split(' ')) {
+      const tr = cur ? cur + ' ' + wd : wd;
+      if (cur && mkWidth(tr, size) > L.capW) { lines.push(cur); cur = wd; } else cur = tr;
+    }
+    lines.push(cur);
+    lines.forEach((ln, i) => mtxt(ln, W / 2, L.cap + (i - (lines.length - 1) / 2) * size * 1.35,
+      { align: 'center', size, col: '#dfe6f2', alpha: a }));
+  }
+}
+
+// ---------------------------------------------------------------- globe (scene 1)
+const LAND_LL = [
+  [[-168,66],[-162,70],[-140,70],[-125,70],[-95,72],[-80,73],[-65,60],[-55,52],[-66,45],[-70,42],[-76,38],[-76,35],[-81,31],[-80,25],[-83,29],[-90,30],[-97,27],[-97,22],[-87,21],[-88,16],[-83,10],[-79,9],[-85,12],[-92,15],[-105,20],[-110,24],[-115,30],[-118,34],[-124,40],[-124,48],[-130,55],[-140,60],[-150,60],[-160,58],[-165,62]],
+  [[-55,60],[-45,60],[-20,70],[-20,80],[-60,82],[-70,78],[-55,70]],
+  [[-80,9],[-75,11],[-62,11],[-50,0],[-35,-5],[-39,-15],[-48,-25],[-58,-35],[-65,-42],[-68,-52],[-75,-50],[-72,-30],[-71,-18],[-81,-5]],
+  [[-17,15],[-17,21],[-10,30],[-6,36],[10,37],[20,32],[32,31],[35,28],[43,12],[51,12],[40,-15],[35,-25],[20,-35],[17,-29],[12,-17],[13,-5],[9,4],[-8,4],[-13,8]],
+  [[-9,37],[-9,43],[-2,44],[-4,48],[2,51],[8,54],[10,58],[5,60],[5,62],[15,68],[25,71],[40,68],[60,70],[60,45],[40,41],[28,41],[26,38],[22,37],[20,40],[16,38],[12,44],[13,45],[8,44],[3,43],[-1,37]],
+  [[-5,50],[1,51],[2,53],[-2,56],[-3,58.5],[-6,58],[-5,55],[-3,54],[-5,52]],
+];
+const LANDS = LAND_LL.map(poly => {
+  const out = [];
+  poly.forEach((p, i) => {
+    const q = poly[(i + 1) % poly.length], n = Math.ceil(Math.max(Math.abs(q[0] - p[0]), Math.abs(q[1] - p[1])) / 2);
+    for (let j = 0; j < n; j++) out.push(llv(lerp(p[1], q[1], j / n), lerp(p[0], q[0], j / n)));
+  });
+  return out;
+});
+const GRAT = [];
+for (let lat = -60; lat <= 60; lat += 30) { const l = []; for (let lon = -180; lon <= 180; lon += 3) l.push(llv(lat, lon)); GRAT.push(l); }
+for (let lon = -180; lon < 180; lon += 30) { const l = []; for (let lat = -90; lat <= 90; lat += 3) l.push(llv(lat, lon)); GRAT.push(l); }
+
+// Polyline of 3D points, front side only; broken at implausibly long jumps
+function strokeFront(pts, S, col, w = 1) {
+  ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = w;
+  ctx.beginPath();
+  const jump = 0.75 * Math.max(W, H);
+  let prev = null;
+  for (const v of pts) {
+    const p = S(v);
+    if (!(p[2] > 0)) { prev = null; continue; }
+    if (prev && Math.hypot(p[0] - prev[0], p[1] - prev[1]) > jump) prev = null;
+    prev ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]);
+    prev = p;
+  }
+  ctx.stroke(); ctx.restore();
+}
+// Clip a projected polygon ([X, Y, depth] per vertex) to the visible hemisphere; the parts
+// behind are replaced by an arc along the limb between the exit and entry points.
+function clipHemisphere(P) {
+  const n = P.length, start = P.findIndex(p => p[2] > 0);
+  if (start < 0) return [];
+  const out = [], cut = (p, q) => {
+    const t = p[2] / (p[2] - q[2]), X = lerp(p[0], q[0], t), Y = lerp(p[1], q[1], t), l = Math.hypot(X, Y) || 1;
+    return [X / l, Y / l];
+  };
+  let exitAng = null;
+  for (let i = 0; i < n; i++) {
+    const p = P[(start + i) % n], q = P[(start + i + 1) % n];
+    if (p[2] > 0) out.push([p[0], p[1]]);
+    if (p[2] > 0 && q[2] <= 0) { const e = cut(p, q); out.push(e); exitAng = Math.atan2(e[1], e[0]); }
+    if (p[2] <= 0 && q[2] > 0) {
+      const e = cut(q, p), a1 = Math.atan2(e[1], e[0]);
+      let da = a1 - exitAng; da -= TAU * Math.round(da / TAU);   // shorter way round
+      for (let j = 1; j < 16; j++) { const a = exitAng + da * j / 16; out.push([Math.cos(a), Math.sin(a)]); }
+      out.push(e);
+    }
+  }
+  return out;
+}
+function drawGlobe(cx, cy, R, proj, alpha = 1) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha;
+  let g = ctx.createRadialGradient(cx, cy, R * 0.95, cx, cy, R * 1.22);
+  g.addColorStop(0, 'rgba(90,170,255,0.35)'); g.addColorStop(1, 'rgba(90,170,255,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, R * 1.22, 0, TAU); ctx.fill();
+  g = ctx.createRadialGradient(cx - R * 0.35, cy - R * 0.35, R * 0.1, cx, cy, R);
+  g.addColorStop(0, '#2a6fc0'); g.addColorStop(1, '#0b2347');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU); ctx.fill();
+  if (R > 10) {
+    ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU); ctx.clip();
+    ctx.fillStyle = 'rgba(96,170,120,0.55)'; ctx.strokeStyle = 'rgba(160,220,170,0.6)'; ctx.lineWidth = 0.8;
+    for (const poly of LANDS) {
+      const pts = clipHemisphere(poly.map(proj));
+      if (pts.length < 3) continue;
+      ctx.beginPath();
+      pts.forEach(([X, Y], i) => i ? ctx.lineTo(cx + X * R, cy - Y * R) : ctx.moveTo(cx + X * R, cy - Y * R));
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+    const S = v => { const p = proj(v); return [cx + p[0] * R, cy - p[1] * R, p[2]]; };
+    for (const l of GRAT) strokeFront(l, S, 'rgba(255,255,255,0.10)', 0.7);
+    ctx.restore();
+  }
+  ctx.strokeStyle = 'rgba(170,210,255,0.5)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU); ctx.stroke();
+  ctx.restore();
+}
+
+// A camera is an orthonormal basis (right, up, depth towards the viewer) in Earth coordinates.
+const camProj = c => v => [dot(v, c.r), dot(v, c.u), dot(v, c.d)];
+// Rotate camera a towards camera b by fraction w (rotation about a fixed axis, i.e. slerp)
+function rotCam(a, b, w) {
+  const Q = [0, 1, 2].map(j => [0, 1, 2].map(k => b.r[j] * a.r[k] + b.u[j] * a.u[k] + b.d[j] * a.d[k]));
+  const ang = Math.acos(clamp((Q[0][0] + Q[1][1] + Q[2][2] - 1) / 2, -1, 1));
+  if (ang < 1e-6) return a;
+  const k = unit([Q[2][1] - Q[1][2], Q[0][2] - Q[2][0], Q[1][0] - Q[0][1]]);
+  const c = Math.cos(ang * w), s = Math.sin(ang * w);
+  const rod = v => add(add(mul(v, c), mul(cross(k, v), s)), mul(k, dot(k, v) * (1 - c)));
+  return { r: rod(a.r), u: rod(a.u), d: rod(a.d) };
+}
+
+// Same view as in the timing animation: looking at (20N, 50W), the wave propagating in the screen plane
+const LAT0 = 20 * D2R, LON0 = -50 * D2R, ALPHA = 60 * D2R;
+const C0 = [Math.cos(LAT0) * Math.cos(LON0), Math.cos(LAT0) * Math.sin(LON0), Math.sin(LAT0)];
+const E1 = [-Math.sin(LON0), Math.cos(LON0), 0];   // screen right (east)
+const E2 = cross(C0, E1);                            // screen up (north)
+const KC = [Math.cos(ALPHA), Math.sin(ALPHA)];       // propagation on canvas
+const CAMG = { r: E1, u: E2, d: C0 };
+// LIGO Livingston, viewed from above with the X arm pointing right and the Y arm up (arm bearings 252.3°, 162.3°)
+const LLO = { lat: 30.563, lon: -90.774, col: '#ff6b81' };
+LLO.r = llv(LLO.lat, LLO.lon);
+const CAML = (() => {
+  const la = LLO.lat * D2R, lo = LLO.lon * D2R;
+  const e = [-Math.sin(lo), Math.cos(lo), 0], n = [-Math.sin(la) * Math.cos(lo), -Math.sin(la) * Math.sin(lo), Math.cos(la)];
+  const arm = b => add(mul(n, Math.cos(b * D2R)), mul(e, Math.sin(b * D2R)));
+  return { r: arm(252.3), u: arm(162.3), d: LLO.r };
+})();
+
+// ---------------------------------------------------------------- scene 1: merger, propagation, zoom onto LLO
+const TM = 4.5, TARR = 10.5, Z0 = 7.5, Z1 = 11, S1DUR = 11.5;
+const W0 = TAU * 0.6, A_ORB = W0 * Math.pow(TM, 0.375) * 1.6;
+const orbPhase = t => A_ORB * (Math.pow(TM, 0.625) - Math.pow(Math.max(TM - Math.min(t, TM), 0), 0.625));
+const CRESTS = (() => { const c = [];   // emission times of GW crests (GW phase = 2 × orbital phase = 2π n)
+  for (let n = 1; ; n++) { const x = Math.pow(TM, 0.625) - Math.PI * n / A_ORB; if (x <= 0) break; c.push(TM - Math.pow(x, 1.6)); }
+  return c; })();
+
+function scene1(t) {
+  const v = 0.3 * U, D = v * (TARR - TM), rE = 0.025 * U, dir = KC, tw = Math.min(t, Z0);
+  const rFront = v * (tw - TM);
+  const ramp = (g, w) => g <= 0 ? 0 : g < w ? g * g / (2 * w) : g - w / 2;
+  // The camera follows the wavefront, and has Earth in view by the time the zoom starts
+  const camD = lerp(Math.min(D, 0.3 * U + ramp(rFront - 0.45 * U, 0.4 * U)), D, ease((t - TM - 0.5) / (Z0 - TM - 0.5)));
+  // Zoom: the camera turns to the LLO view while Earth grows until the arms have their scene-2 length.
+  // Everything is placed relative to Livingston, which moves to the scene-2 beam splitter position.
+  const u = clamp((t - Z0) / (Z1 - Z0)), g = ifoGeo(lay().ifoA);
+  const cam = rotCam(CAMG, CAML, ease(u / 0.6)), proj = camProj(cam);
+  const R = rE * Math.pow(g.La * 6371 / 4 / rE, ease(u));
+  const ex0 = W / 2 + (D - camD) * dir[0], ey0 = VH / 2 + (D - camD) * dir[1];
+  const pG = camProj(CAMG)(LLO.r), p = proj(LLO.r);
+  const lx = lerp(ex0 + rE * pG[0], g.bx, ease(u)), ly = lerp(ey0 - rE * pG[1], g.by, ease(u));
+  const ex = lx - R * p[0], ey = ly + R * p[1], S = R / rE;
+  const toS = (wx, wy) => [ex + (wx - D * dir[0]) * S, ey + (wy - D * dir[1]) * S];
+  const fz = 1 - ease(u / 0.35);   // source and crests fade during the zoom
+
+  drawStars(-camD * dir[0] * 0.15, -camD * dir[1] * 0.15, lerp(1, 0.5, ease(u)));
+  const [sx, sy] = toS(0, 0);
+
+  if (fz > 0) {
+    // GW crests emitted during the inspiral
+    ctx.save();
+    ctx.lineWidth = 1.6;
+    for (const te of CRESTS) {
+      if (te > tw) break;
+      const r = v * (tw - te), amp = Math.min(1, 0.35 * Math.pow((TM - te) / TM, -0.25));
+      ctx.strokeStyle = `rgba(90,209,255,${fz * 0.75 * amp / (1 + r / (0.6 * U))})`;
+      ctx.beginPath(); ctx.arc(sx, sy, r * S, 0, TAU); ctx.stroke();
+    }
+    // Merger wavefront plus a few ringdown crests
+    if (tw >= TM) {
+      for (let m = 3; m >= 0; m--) {
+        const te = TM + m * 0.07; if (te > tw) continue;
+        const r = v * (tw - te), a = fz * (m ? 0.6 * Math.exp(-m) : 1);
+        ctx.strokeStyle = `rgba(190,240,255,${a})`; ctx.lineWidth = m ? 2 : 3.5;
+        ctx.shadowColor = '#5ad1ff'; ctx.shadowBlur = m ? 0 : 18;
+        ctx.beginPath(); ctx.arc(sx, sy, r * S, 0, TAU); ctx.stroke();
+      }
+    }
+    ctx.restore();
+
+    // Binary
+    const a0 = 0.07 * U, rBH = 0.011 * U * S;
+    if (t < TM) {
+      const ph = orbPhase(t), a = a0 * Math.pow((TM - t) / TM, 0.25) * S;
+      for (const sg of [1, -1]) {
+        const bx = sx + sg * a / 2 * Math.cos(ph), by = sy + sg * a / 2 * Math.sin(ph);
+        const gr = ctx.createRadialGradient(bx, by, rBH * 0.8, bx, by, rBH * 2.4);
+        gr.addColorStop(0, 'rgba(255,190,120,0.9)'); gr.addColorStop(1, 'rgba(255,140,60,0)');
+        ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(bx, by, rBH * 2.4, 0, TAU); ctx.fill();
+        ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(bx, by, rBH, 0, TAU); ctx.fill();
+      }
+    } else {
+      const dt = t - TM, rr = rBH * 1.35 * (1 + 0.15 * Math.exp(-dt / 0.3) * Math.cos(TAU * 6 * dt));
+      const gr = ctx.createRadialGradient(sx, sy, rr * 0.8, sx, sy, rr * 2.4);
+      gr.addColorStop(0, 'rgba(255,190,120,0.9)'); gr.addColorStop(1, 'rgba(255,140,60,0)');
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(sx, sy, rr * 2.4, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(sx, sy, rr, 0, TAU); ctx.fill();
+      // Merger "flash": a few decaying blinks
+      const I = Math.exp(-dt / 0.7) * 0.5 * (1 + Math.cos(TAU * 2.5 * dt));
+      if (I > 0.005) {
+        const Rf = 0.3 * U * (0.4 + I);
+        const g2 = ctx.createRadialGradient(sx, sy, 0, sx, sy, Rf);
+        g2.addColorStop(0, `rgba(255,255,255,${I})`); g2.addColorStop(0.25, `rgba(200,180,255,${0.6 * I})`);
+        g2.addColorStop(1, 'rgba(120,90,255,0)');
+        ctx.fillStyle = g2; ctx.beginPath(); ctx.arc(sx, sy, Rf, 0, TAU); ctx.fill();
+        if (dt < 0.15) { ctx.fillStyle = `rgba(255,255,255,${0.25 * (1 - dt / 0.15)})`; ctx.fillRect(0, 0, W, H); }
+      }
+    }
+  }
+
+  // Earth, fading out once we are close to the ground
+  drawGlobe(ex, ey, R, proj, 1 - ease((u - 0.5) / 0.3));
+  if (u < 0.1) txt('Earth', ex, ey + R + 16, { align: 'center', size: 13, col: '#9cc8ff', alpha: 1 - u / 0.1 });
+  const la = ease((t - Z0 + 0.3) / 0.5) * (1 - ease((u - 0.6) / 0.2));
+  if (la > 0) {
+    ctx.save(); ctx.globalAlpha = la; detDot(lx, ly, LLO.col, true, -1, 5); ctx.restore();
+    txt('LIGO Livingston', lx + 10, ly - 12, { size: 13, weight: 600, col: LLO.col, alpha: la });
+  }
+  // The arms, 4 km long
+  const arm = R * 4 / 6371, aa = ease((u - 0.55) / 0.3);
+  if (aa > 0) {
+    ctx.save(); ctx.globalAlpha = aa;
+    line(lx, ly, lx + arm, ly, '#cfe3ff', 3); line(lx, ly, lx, ly - arm, '#cfe3ff', 3);
+    ctx.restore();
+  }
+  caption(t, [
+    [0.3, 4.4, 'A binary black hole inspirals and merges, emitting gravitational waves.'],
+    [4.6, 7.6, 'The waves travel to Earth at the speed of light (not to scale: ~10⁹ years of travel compressed into a few seconds).'],
+    [7.8, S1DUR + 0.5, 'Zooming in on LIGO Livingston: two perpendicular arms, each 4 km long.'],
+  ]);
+}
+
+// ---------------------------------------------------------------- the interferometer
+function beam(p0, p1, a, off = 0) {
+  const dx = p1[0] - p0[0], dy = p1[1] - p0[1], l = Math.hypot(dx, dy);
+  if (l < 0.5) return;
+  const nx = -dy / l * off, ny = dx / l * off;   // return beams are offset to the other side
+  ctx.save(); ctx.globalAlpha *= a; ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(255,70,70,0.6)'; ctx.lineWidth = 4; ctx.shadowColor = '#ff4040'; ctx.shadowBlur = 10;
+  ctx.beginPath(); ctx.moveTo(p0[0] + nx, p0[1] + ny); ctx.lineTo(p1[0] + nx, p1[1] + ny); ctx.stroke();
+  // Moving stripes in the direction of propagation
+  ctx.shadowBlur = 0; ctx.strokeStyle = 'rgba(255,200,200,0.85)'; ctx.lineWidth = 1.5;
+  ctx.setLineDash([5, 9]); ctx.lineDashOffset = -T * 40; ctx.stroke();
+  ctx.restore();
+}
+// o: { alpha, front (light front in units of La, for switching on), h (visual strain), P (output power / input power),
+//      lab (label alpha), grid (free-particle grid alpha) }
+function drawIFO(g, o = {}) {
+  const { La, bx, by } = g, h = o.h || 0, fr = o.front ?? Infinity, P = clamp(o.P || 0), lab = o.lab ?? 1;
+  const Tp = (x, y) => [bx + x * La * (1 + h / 2), by + y * La * (1 - h / 2)];   // + polarization about the BS
+  const sz = clamp(La * 0.036, 9.5, 13.5);
+  ctx.save(); ctx.globalAlpha *= o.alpha ?? 1;
+  if (o.grid > 0) {   // grid of free-falling reference points, deformed by the wave
+    const gc = `rgba(90,209,255,${0.16 * o.grid})`;
+    for (let i = -4; i <= 10; i++) { const p = Tp(i / 10, -1.1), q = Tp(i / 10, 0.45); line(p[0], p[1], q[0], q[1], gc); }
+    for (let j = -11; j <= 4; j++) { const p = Tp(-0.42, j / 10), q = Tp(1.08, j / 10); line(p[0], p[1], q[0], q[1], gc); }
+  }
+  const LZ = Tp(-0.25, 0), B = Tp(0, 0), IX = Tp(0.18, 0), EX = Tp(1, 0), IY = Tp(0, -0.18), EY = Tp(0, -1), PD = Tp(0, 0.3);
+
+  // Light; the path length so far is fr: laser -> BS (0.25), arms out and back (1 each), BS -> ports
+  const seg = (s0, s1, p, q, a, off) => {
+    const f = clamp((fr - s0) / (s1 - s0));
+    if (f > 0 && a > 0.003) beam(p, [lerp(p[0], q[0], f), lerp(p[1], q[1], f)], a, off);
+  };
+  seg(0, 0.25, LZ, B, 1, 1.5);
+  for (const E of [EX, EY]) { seg(0.25, 1.25, B, E, 1, 1.5); seg(1.25, 2.25, E, B, 1, 1.5); }
+  seg(2.25, 2.5, B, LZ, 1 - P, 1.5);                          // back towards the laser
+  seg(2.25, 2.52, B, [PD[0], PD[1] - 0.02 * La], P, 0);       // output port
+
+  // Optics
+  const mirror = (p, vert) => {
+    const tw = 0.022 * La, tl = 0.1 * La;
+    ctx.fillStyle = '#9fb8d8'; ctx.strokeStyle = '#e3eeff'; ctx.lineWidth = 1;
+    if (vert) { ctx.fillRect(p[0] - tw / 2, p[1] - tl / 2, tw, tl); ctx.strokeRect(p[0] - tw / 2, p[1] - tl / 2, tw, tl); }
+    else { ctx.fillRect(p[0] - tl / 2, p[1] - tw / 2, tl, tw); ctx.strokeRect(p[0] - tl / 2, p[1] - tw / 2, tl, tw); }
+  };
+  mirror(IX, true); mirror(EX, true); mirror(IY, false); mirror(EY, false);
+  ctx.save(); ctx.translate(B[0], B[1]); ctx.rotate(-Math.PI / 4);
+  ctx.fillStyle = 'rgba(170,200,240,0.55)'; ctx.strokeStyle = '#e3eeff'; ctx.lineWidth = 1;
+  ctx.fillRect(-0.06 * La, -0.009 * La, 0.12 * La, 0.018 * La); ctx.strokeRect(-0.06 * La, -0.009 * La, 0.12 * La, 0.018 * La);
+  ctx.restore();
+  const lz = Tp(-0.32, 0);
+  ctx.fillStyle = '#2a1418'; ctx.strokeStyle = '#ff5a5a'; ctx.lineWidth = 1.5;
+  roundBox(lz[0] - 0.07 * La, lz[1] - 0.035 * La, 0.14 * La, 0.07 * La, 4); ctx.fill(); ctx.stroke();
+  txt('laser', lz[0], lz[1], { align: 'center', size: sz, weight: 600, col: '#ff9a9a' });
+  // Photodiode, glowing with the output power
+  if (P > 0.003) {
+    const gr = ctx.createRadialGradient(PD[0], PD[1], 0, PD[0], PD[1], 0.12 * La);
+    gr.addColorStop(0, `rgba(255,120,120,${clamp(1.4 * P)})`); gr.addColorStop(1, 'rgba(255,90,90,0)');
+    ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(PD[0], PD[1], 0.12 * La, 0, TAU); ctx.fill();
+  }
+  ctx.fillStyle = '#1b2333'; ctx.strokeStyle = '#ff9a9a'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(PD[0], PD[1], 0.03 * La, Math.PI, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillRect(PD[0] - 0.03 * La, PD[1], 0.06 * La, 0.025 * La); ctx.strokeRect(PD[0] - 0.03 * La, PD[1], 0.06 * La, 0.025 * La);
+
+  // Labels
+  if (lab > 0) {
+    const o2 = { size: sz, col: COL.soft, alpha: lab };
+    let p = Tp(-0.03, 0.07); txt('beam splitter', p[0], p[1], { ...o2, align: 'right' });
+    p = Tp(0.18, 0.085); txt('ITMX', p[0], p[1], { ...o2, align: 'center' });
+    p = Tp(1, 0.085); txt('ETMX', p[0], p[1], { ...o2, align: 'center' });
+    p = Tp(-0.07, -0.18); txt('ITMY', p[0], p[1], { ...o2, align: 'right' });
+    p = Tp(-0.07, -1); txt('ETMY', p[0], p[1], { ...o2, align: 'right' });
+    p = Tp(0.6, -0.045); txt('X arm', p[0], p[1], { ...o2, align: 'center', col: COL.X, weight: 600 });
+    p = Tp(0.035, -0.6); txt('Y arm', p[0], p[1], { ...o2, col: COL.Y, weight: 600 });
+    p = Tp(0, 0.39); txt('photodiode (output port)', p[0], p[1], { ...o2, align: 'center' });
+  }
+  ctx.restore();
+}
+
+// Light fields of both arms at the output port, and their sum
+function fieldsRect(L) { return { x: L.panel.x, y: L.panel.y, w: L.panel.w, h: L.panel.h * 0.42 }; }
+function drawFields(r, dphi, a) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a;
+  txt('light fields arriving at the output port', r.x, r.y, { size: 14, weight: 600 });
+  const x0 = r.x + 100, x1 = r.x + r.w, lam = (x1 - x0) / 3.2, amp = r.h * 0.1;
+  [['from X arm', COL.X], ['from Y arm', COL.Y], ['sum', '#ffffff']].forEach(([name, col], i) => {
+    const y0 = r.y + r.h * (0.27 + 0.25 * i);
+    txt(name, r.x, y0, { size: 13, col, weight: 600 });
+    line(x0, y0, x1, y0, 'rgba(255,255,255,0.12)');
+    ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = 1.8; ctx.beginPath();
+    for (let x = x0; x <= x1 + 0.1; x += 2) {
+      const th = TAU * (x - x0) / lam - TAU * 0.5 * T, ex = Math.cos(th + dphi / 2), ey = Math.cos(th + Math.PI - dphi / 2);
+      const y = y0 - amp * (i === 0 ? ex : i === 1 ? ey : (ex + ey) / 2);
+      x === x0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke(); ctx.restore();
+  });
+  txt('time →', x1, r.y + r.h * 0.84, { align: 'right', size: 11, col: COL.mute });
+  const P = Math.sin(dphi / 2) ** 2;
+  mtxt(`phase difference Δφ = ${dphi.toFixed(2)} rad   →   P / P_{in} = sin²(Δφ/2) = ${P.toFixed(2)}`,
+    r.x, r.y + r.h * 0.97, { size: 13, col: COL.soft });
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------- scene 2: the Michelson
+const S2DUR = 14;
+// Operating point: the returning waves nearly, but not exactly, cancel at the output port (exaggerated)
+const DPHI0 = 1.0, P0 = Math.sin(DPHI0 / 2) ** 2;
+function scene2(tl) {
+  const L = lay(), g = ifoGeo(L.ifoA), a = ease(tl / 1);
+  drawStars(0, 0, 0.5);
+  if (a < 1) {   // cross-fade from the arms at the end of scene 1
+    ctx.save(); ctx.globalAlpha = 1 - a;
+    line(g.bx, g.by, g.bx + g.La, g.by, '#cfe3ff', 3); line(g.bx, g.by, g.bx, g.by - g.La, '#cfe3ff', 3);
+    ctx.restore();
+  }
+  const front = (tl - 1.5) / 1.2;
+  drawIFO(g, { alpha: a, front, P: P0 * clamp((front - 2.25) / 0.27), lab: ease((tl - 0.5) / 1) });
+  drawFields(fieldsRect(L), DPHI0, ease((tl - 5) / 0.8));
+  caption(tl, [
+    [0.3, 4.8, 'A laser beam is split by the beam splitter and sent down two perpendicular arms, where it is reflected by suspended mirrors (the test masses ITM and ETM).'],
+    [4.8, 9.6, 'The two beams return and recombine at the beam splitter. The arm lengths are set such that the returning waves nearly cancel at the output port: only a little light reaches the photodiode.'],
+    [9.6, S2DUR + 0.5, 'Most of the light goes back towards the laser instead. (In LIGO the arms are Fabry–Pérot cavities and the light is recycled, which boosts the response; we stick with a simple Michelson here.)'],
+  ]);
+}
+
+// ---------------------------------------------------------------- scene 3: strain -> photodiode power
+const S3DUR = 14, F3 = 0.4, HV = 0.13;   // visual GW frequency [1/s of animation] and (hugely exaggerated) strain
+const KPH = 0.4 / HV;                     // phase difference per strain [rad], i.e. ±0.4 rad around DPHI0
+const h3 = tl => HV * ease((tl - 1) / 1.5) * Math.sin(TAU * F3 * (tl - 1));   // keeps going in scene 4
+const dphi3 = tl => DPHI0 + KPH * h3(tl);
+const P3 = tl => Math.sin(dphi3(tl) / 2) ** 2;
+const PA = Math.sin((DPHI0 + KPH * HV) / 2) ** 2 - P0;   // largest excursion of P
+
+// The wave, travelling into the screen: the whole detector plane oscillates in phase
+function waveGlow(g, hh) {
+  const cx = g.bx + 0.33 * g.La, cy = g.by - 0.33 * g.La, gr = ctx.createRadialGradient(cx, cy, 0, cx, cy, 1.1 * g.La);
+  gr.addColorStop(0, hh >= 0 ? `rgba(90,209,255,${0.9 * hh})` : `rgba(140,110,255,${-0.9 * hh})`);
+  gr.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = gr; ctx.fillRect(0, 0, W, VH);
+}
+function scene3(tl) {
+  const L = lay(), g = ifoGeo(L.ifoA), hh = h3(tl), end = 1 - ease((tl - S3DUR + 1) / 0.8);
+  drawStars(0, 0, 0.5);
+  waveGlow(g, hh);
+  drawIFO(g, { h: hh, P: P3(tl), grid: ease((tl - 0.5) / 1) });
+  const ga = ease((tl - 0.5) / 1) * (1 - ease((tl - 8) / 1));
+  txt('⊗ GW travelling into the screen (+ polarization)', L.ifoA.x + L.ifoA.w, L.ifoA.y + 4,
+    { align: 'right', size: 13, col: COL.gw, alpha: ga });
+
+  // Panel: fields at the output port and the time series of h and P
+  const p = L.panel;
+  ctx.save(); ctx.globalAlpha = end;
+  drawFields(fieldsRect(L), dphi3(tl), 1);
+  const win = 7, tx0 = p.x + 10, tx1 = p.x + p.w * 0.86;
+  const X = tau => tx1 - (tl - tau) / win * (tx1 - tx0);
+  const rh = { y: p.y + p.h * 0.58, h: p.h * 0.14 }, rp = { y: p.y + p.h * 0.8, h: p.h * 0.15 };
+  txt('strain h(t)', tx0, rh.y - 12, { size: 13, weight: 600, col: COL.gw });
+  txt('photodiode power P(t)', tx0, rp.y - 12, { size: 13, weight: 600, col: COL.P });
+  line(tx0, rh.y + rh.h / 2, tx1, rh.y + rh.h / 2, 'rgba(255,255,255,0.15)');
+  line(tx0, rp.y + rp.h, tx1, rp.y + rp.h, 'rgba(255,255,255,0.15)');
+  const curve = (fn, col) => {
+    ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = 1.8; ctx.beginPath();
+    for (let tau = Math.max(0, tl - win), k = 0; tau <= tl; tau += 0.02, k++) {
+      const y = fn(tau); k ? ctx.lineTo(X(tau), y) : ctx.moveTo(X(tau), y);
+    }
+    ctx.stroke(); ctx.restore();
+  };
+  curve(tau => rh.y + rh.h / 2 - h3(tau) / HV * rh.h / 2, COL.gw);
+  curve(tau => rp.y + rp.h * (1 - P3(tau) / (2 * (P0 + PA))), COL.P);   // P axis from 0 to twice the peak
+  txt('time →', tx1, rp.y + rp.h + 14, { align: 'right', size: 11, col: COL.mute });
+  ctx.restore();
+  caption(tl, [
+    [0, 4.6, 'A gravitational wave passes, here travelling into the screen: it stretches one arm while squeezing the other, and vice versa half a cycle later (exaggerated by ~10²⁰).'],
+    [4.6, S3DUR + 0.5, 'This shifts the phase of the light in the two arms in opposite directions (Δφ ∝ h). The returning waves cancel more or less, so the power on the photodiode follows the strain.'],
+  ]);
+}
+
+// ---------------------------------------------------------------- scene 4: the chain h -> P, and the way back
+const S4DUR = 17;
+// Quadratic Bézier from p0 to p2 with control point c, and its tangent
+const bez = (p0, c, p2, u) => [0, 1].map(k => (1 - u) ** 2 * p0[k] + 2 * u * (1 - u) * c[k] + u * u * p2[k]);
+const bezD = (p0, c, p2, u) => [0, 1].map(k => 2 * (1 - u) * (c[k] - p0[k]) + 2 * u * (p2[k] - c[k]));
+function scene4(tl) {
+  const L = lay(), g = ifoGeo(L.ifoA), tw = S3DUR + tl, hh = h3(tw);   // the wave keeps going
+  drawStars(0, 0, 0.5);
+  waveGlow(g, hh);
+  drawIFO(g, { h: hh, P: P3(tw), grid: 1 });
+  // Stages: h(t), the two steps in between, P(t). The steps are highlighted on the detector while they
+  // are introduced: arms, then beam splitter, then photodiode.
+  const t0 = [0.8, 1.8, 3.4, 5.0], st = t0.map(t => ease((tl - t) / 0.6));
+  const hl = t0.map((t, i) => st[i] * (1 - ease((tl - t - 1.8) / 0.6)));
+  const ring = (x, y, col, a) => {
+    if (a <= 0) return;
+    ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.shadowColor = col; ctx.shadowBlur = 12;
+    ctx.beginPath(); ctx.arc(x, y, 0.08 * g.La, 0, TAU); ctx.stroke(); ctx.restore();
+  };
+  ring(g.bx + g.La * (1 + hh / 2), g.by, COL.gw, hl[1]); ring(g.bx, g.by - g.La * (1 - hh / 2), COL.gw, hl[1]);
+  ring(g.bx, g.by, '#ffffff', hl[2]);
+  ring(g.bx, g.by + 0.3 * g.La * (1 - hh / 2), COL.P, hl[3]);
+
+  // Live traces of h and P
+  const p = L.panel, bw = 0.8 * p.w, bh = 0.24 * p.h, ys = [0.06, 0.62].map(f => p.y + f * p.h), win = 7;
+  const boxes = [
+    ['strain h(t)', COL.gw, tau => h3(tau) / HV, st[0]],
+    ['photodiode power P(t)', COL.P, tau => (P3(tau) - P0) / PA, st[3]],
+  ];
+  boxes.forEach(([name, col, fn, a], i) => {
+    if (a <= 0) return;
+    const y = ys[i], x0 = p.x + 12, x1 = p.x + bw - 12, yc = y + bh * 0.6, amp = bh * 0.28;
+    ctx.save(); ctx.globalAlpha = a;
+    roundBox(p.x, y, bw, bh, 8); ctx.fillStyle = 'rgba(18,26,41,0.85)'; ctx.fill();
+    ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.stroke();
+    txt(name, p.x + 12, y + 16, { size: 13, weight: 600, col });
+    line(x0, yc, x1, yc, 'rgba(255,255,255,0.12)');
+    ctx.strokeStyle = col; ctx.lineWidth = 1.8; ctx.beginPath();
+    for (let tau = tw - win, k = 0; tau <= tw + 1e-9; tau += 0.02, k++) {
+      const x = x1 - (tw - tau) / win * (x1 - x0), y2 = yc - amp * fn(tau);
+      k ? ctx.lineTo(x, y2) : ctx.moveTo(x, y2);
+    }
+    ctx.stroke(); ctx.restore();
+  });
+  // Forward direction, with the two steps in between
+  const ax = p.x + 0.3 * bw, ya = ys[0] + bh + 6, yb = ys[1] - 6;
+  if (st[1] > 0) { ctx.save(); ctx.globalAlpha = st[1]; arrow(ax, ya, ax, yb, COL.soft, 2, 10); ctx.restore(); }
+  txt('arm lengths change → light phase shifts', ax + 14, lerp(ya, yb, 0.35), { size: 13, col: COL.soft, alpha: st[1] });
+  txt('interference → photodiode power changes', ax + 14, lerp(ya, yb, 0.65), { size: 13, col: COL.soft, alpha: st[2] });
+  const ta = ease((tl - 6.6) / 0.6);
+  txt('what we want', p.x + bw - 12, ys[0] + 16, { align: 'right', size: 12.5, weight: 700, col: COL.gw, alpha: ta });
+  txt('what we measure', p.x + bw - 12, ys[1] + 16, { align: 'right', size: 12.5, weight: 700, col: COL.P, alpha: ta });
+  // The way back, growing from P to h
+  const f = ease((tl - 8.6) / 1.6);
+  if (f > 0.02) {
+    const sx = p.x + bw + 10, Q0 = [sx, ys[1] + bh / 2], Q2 = [sx, ys[0] + bh / 2], C = [sx + 0.2 * p.w, (Q0[1] + Q2[1]) / 2];
+    ctx.save(); ctx.strokeStyle = COL.cal; ctx.lineWidth = 2.5; ctx.beginPath();
+    for (let k = 0; k <= 40; k++) { const q = bez(Q0, C, Q2, f * k / 40); k ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }
+    ctx.stroke();
+    const e = bez(Q0, C, Q2, f), d = bezD(Q0, C, Q2, f), l = Math.hypot(d[0], d[1]);
+    arrow(e[0] - d[0] / l, e[1] - d[1] / l, e[0], e[1], COL.cal, 0.01, 12);
+    const m = bez(Q0, C, Q2, 0.5);
+    ctx.translate(m[0] + 16, m[1]); ctx.rotate(-Math.PI / 2);
+    txt('calibration', 0, 0, { align: 'center', size: 15, weight: 700, col: COL.cal, alpha: ease((tl - 9.8) / 0.6) });
+    ctx.restore();
+  }
+  caption(tl, [
+    [0, 6.6, 'In short: the strain changes the arm lengths, which shifts the phase of the light; interference at the beam splitter turns that phase shift into a change of power on the photodiode.'],
+    [6.6, 11.8, 'But all we measure is the photodiode power P(t), while for astrophysics we want the strain h(t). So we need to go the other way.'],
+    [11.8, S4DUR + 0.5, 'That reverse step is calibration: reconstructing h(t) from the photodiode signal, which requires knowing precisely how the detector turns strain into power.'],
+  ]);
+}
+
+// ---------------------------------------------------------------- scenes and controls
+const SCENES = [
+  { name: 'Wave', dur: S1DUR, draw: scene1 },
+  { name: 'Interferometer', dur: S2DUR, draw: scene2 },
+  { name: 'Strain', dur: S3DUR, draw: scene3 },
+  { name: 'The way back', dur: S4DUR, draw: scene4 },
+];
+let acc = 0; SCENES.forEach(s => { s.start = acc; acc += s.dur; });
+const TOTAL = acc;
+
+const scrub = document.getElementById('scrub'),
+  playBtn = document.getElementById('play'), timeEl = document.getElementById('time'), chapEl = document.getElementById('chapters');
+scrub.max = TOTAL;
+SCENES.forEach((s, i) => {
+  const b = document.createElement('button'); b.textContent = `${i + 1} ${s.name}`;
+  b.onclick = () => { T = s.start; }; chapEl.appendChild(b); s.btn = b;
+});
+// Chapter buttons if they fit on one line, otherwise a drop-down menu
+const chapSel = document.getElementById('chapsel');
+SCENES.forEach((s, i) => chapSel.add(new Option(`${i + 1} ${s.name}`, i)));
+chapSel.onchange = () => { T = SCENES[+chapSel.value].start; chapSel.blur(); };
+function fitChapters() {
+  chapEl.style.display = ''; chapSel.style.display = 'none';
+  if (chapEl.offsetHeight > 1.5 * chapEl.firstChild.offsetHeight) { chapEl.style.display = 'none'; chapSel.style.display = ''; }
+}
+addEventListener('resize', fitChapters); fitChapters();
+let T = 0, playing = true, speed = 1, last = null;
+const setPlay = p => { playing = p; playBtn.textContent = p ? 'Pause' : 'Play'; };
+playBtn.onclick = () => { if (!playing && T >= TOTAL) T = 0; setPlay(!playing); };
+document.getElementById('restart').onclick = () => { T = 0; setPlay(true); };
+document.getElementById('speed').onchange = e => { speed = +e.target.value; };
+const capBtn = document.getElementById('caps');
+capBtn.onclick = () => { capsOn = !capsOn; capBtn.classList.toggle('on', capsOn); capBtn.blur(); };
+scrub.oninput = () => { T = +scrub.value; };
+addEventListener('keydown', e => {
+  if (recording) return;
+  if (e.code === 'Space') { e.preventDefault(); playBtn.onclick(); }
+  if (e.code === 'ArrowRight') T = Math.min(TOTAL, T + 3);
+  if (e.code === 'ArrowLeft') T = Math.max(0, T - 3);
+  if (e.code === 'KeyC') capBtn.onclick();
+});
+window.seek = t => { T = t; setPlay(false); render(); };   // for debugging
+
+// Records the canvas in real time from the start, so the selected speed carries over into the video.
+// The video downloads once the animation ends; stopping early discards it.
+const recBtn = document.getElementById('rec');
+let recDone = null;
+async function record() {
+  const mime = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm']
+    .find(m => MediaRecorder.isTypeSupported(m));
+  recording = true; cv.classList.add('rec'); resize();
+  recBtn.textContent = 'Stop recording'; recBtn.classList.add('recording');
+  // No seeking or pausing while recording; the speed can still be changed
+  for (const el of [playBtn, document.getElementById('restart'), scrub, ...chapEl.children, chapSel]) el.disabled = true;
+  T = 0; setPlay(true); render();
+  const rec = new MediaRecorder(cv.captureStream(60), { mimeType: mime, videoBitsPerSecond: 8e6 });
+  const chunks = [], stopped = new Promise(r => rec.onstop = r);
+  rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+  rec.start();
+  const finished = await new Promise(r => recDone = r);
+  recDone = null;
+  rec.stop(); await stopped;
+  recording = false; cv.classList.remove('rec'); resize();
+  recBtn.textContent = 'Record'; recBtn.classList.remove('recording');
+  for (const el of [playBtn, document.getElementById('restart'), scrub, ...chapEl.children, chapSel]) el.disabled = false;
+  if (!finished) return;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(chunks, { type: mime }));
+  a.download = 'gw_detector_calibration_v2.' + (mime.startsWith('video/mp4') ? 'mp4' : 'webm');
+  a.click();
+}
+recBtn.onclick = () => recDone ? recDone(false) : record();
+
+function render() {
+  ctx.fillStyle = '#04060c'; ctx.fillRect(0, 0, W, H);
+  let i = SCENES.findIndex(s => T < s.start + s.dur); if (i < 0) i = SCENES.length - 1;
+  const s = SCENES[i], tl = T - s.start;
+  ctx.save(); s.draw(tl); ctx.restore();
+  SCENES.forEach((x, j) => x.btn.classList.toggle('on', j === i));
+  if (document.activeElement !== chapSel && chapSel.value !== String(i)) chapSel.value = i;
+  scrub.value = T;
+  timeEl.textContent = `${T.toFixed(1)} / ${TOTAL.toFixed(0)} s`;
+}
+function frame(ts) {
+  if (last === null) last = ts;
+  const dt = Math.min(0.05, (ts - last) / 1000); last = ts;
+  if (playing) {
+    T += dt * speed;
+    if (T >= TOTAL) {
+      T = TOTAL; setPlay(false);
+      if (recDone) { const done = recDone; setTimeout(() => done(true), 1000); }   // hold the last frame for 1 s
+    }
+  }
+  render();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
